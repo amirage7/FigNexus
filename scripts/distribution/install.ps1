@@ -1,4 +1,4 @@
-﻿param([string]$CodexHome, [string]$DataRoot, [switch]$NonInteractive)
+﻿param([string]$CodexHome, [string]$DataRoot, [switch]$NonInteractive, [switch]$SkipStart)
 $ErrorActionPreference = 'Stop'
 $packageRoot = $PSScriptRoot
 if (-not $DataRoot) { $DataRoot = Join-Path $env:LOCALAPPDATA 'FigmaAIBridge' }
@@ -33,4 +33,4 @@ if (-not (Test-Path -LiteralPath $destination)) {
 if ($LASTEXITCODE -ne 0) { throw 'Configuration update failed; review the reported backup.' }
 Write-Host 'Installed. Restart Codex once. User data stays in:' $data
 
-if(-not $NonInteractive){ & (Join-Path $destination 'start.ps1') -DataRoot $DataRoot }
+if(-not $NonInteractive -and -not $SkipStart){ & (Join-Path $destination 'start.ps1') -DataRoot $DataRoot -CodexHome $CodexHome }

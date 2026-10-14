@@ -7,7 +7,7 @@ import { Status, Result, ReadInput, ExecuteInput, PreviewInput, Request, ListBac
 export function createMcp(token: string, bridgeUrl = 'http://127.0.0.1:3055') {
   const parsed = new URL(bridgeUrl);
   if (parsed.origin !== 'http://127.0.0.1:3055') throw new Error('Only loopback Bridge on port 3055 is supported');
-  const server = new McpServer({ name: 'figma-ai-bridge', version: '0.3.6' });
+  const server = new McpServer({ name: 'figma-ai-bridge', version: '0.3.7' });
   async function call(path: string, body?: unknown) {
     const response = await fetch(parsed.origin + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(path === '/v1/preview' ? 90000 : 25000) });
     const json = await response.json();

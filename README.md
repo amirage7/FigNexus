@@ -6,7 +6,7 @@ FigNexus 连接 Codex 与正在运行的 Figma 桌面插件，可以读取画布
 
 ![FigNexus 展开面板与折叠状态条，示例数据](docs/images/panel.png)
 
-> **0.3.6 · Windows x64 + Figma 桌面端 + Codex**。无需发布到 Figma 社区，无需 Figma PAT 或额外 AI API key。其他客户端未纳入本版本验收。
+> **0.3.7 · Windows x64 + Figma 桌面端 + Codex**。无需发布到 Figma 社区，无需 Figma PAT 或额外 AI API key。其他客户端未纳入本版本验收。
 
 ## 下载与首次安装
 
@@ -14,9 +14,8 @@ FigNexus 连接 Codex 与正在运行的 Figma 桌面插件，可以读取画布
 
 ![首次安装：安装、导入、配对、开始设计](docs/images/setup.svg)
 
-1. **安装到本机。** 解压 `FigNexus-0.3.6-Windows.zip`，双击 `install.cmd`，看到配置预览后输入 `YES`。安装器自动备份并合并 Codex 配置，启动本机服务，显示要导入的 manifest 完整路径。
-2. **直接导入 FigNexus。** 在 Figma 桌面端选择 `Plugins → Development → Import plugin from manifest`，把安装器显示的**安装目录/plugin/manifest.json** 路径粘贴到“文件名”栏并打开，然后运行 **FigNexus**。无需先 New plugin、创建空白插件或选择其他 manifest 提取 ID。
-3. **配对并开始设计。** 重启 Codex 一次。在插件点击 **配对本机**，核对与自动弹出的本机窗口六位码相同，点击 **是**。在线后开启 **允许创建和编辑**，在 Codex 输入设计需求。
+1. **双击“开始使用”。** 解压 `FigNexus-0.3.7-Windows.zip`，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入 `YES` 确认后完成安装、注册 Codex 接口、启动本机服务，并显示 Figma 导入路径。**不用单独运行 install.cmd。** 再次双击只启动已安装版本，不重复安装或修改配置。
+2. **在 Figma 导入并配对。** 选择 `Plugins → Development → Import plugin from manifest`，粘贴显示的**安装目录/plugin/manifest.json** 路径，运行 FigNexus。首次安装后重启 Codex 一次；点击插件“配对本机”，核对六位码并确认，在线后开启编辑，在 Codex 说需求。无需 New plugin、空白插件或手动令牌。
 
 **无 ID 直接导入已在真实 Figma 桌面端验证：成功导入、运行、在线，并通过原生只读 ping；导入前后 manifest 均没有 id。** 官方 [manifest 文档](https://developers.figma.com/docs/plugins/manifest/) 描述 ID 用于发布更新，[导入指南](https://help.figma.com/hc/en-us/articles/38457121114263-Create-a-Figma-Design-plugin-with-the-Figma-MCP-server-and-agentic-tools) 说明通过开发菜单导入 manifest。这里的可行性以实际验证为依据，不使用伪造 ID 或私有 API。
 

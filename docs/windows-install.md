@@ -1,16 +1,16 @@
 # FigNexus Windows 安装指南
 
-0.3.6 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
+0.3.7 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
 
-![三步首次安装](images/setup.svg)
+![统一开始使用入口](images/setup.svg)
 
-## 1. 安装
+## 1. 双击开始使用
 
-从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.6-Windows.zip`，完整解压，双击 `install.cmd`。查看配置预览，输入大写 `YES` 回车。
+从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.7-Windows.zip`，完整解压，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入大写 `YES` 回车；完成后继续启动本机服务并显示 Figma 导入路径。不需要单独运行 `install.cmd`。
 
-安装器备份并合并 Codex MCP 配置，保留其他服务，启动本机服务，并显示待导入的 `manifest.json` 完整路径。无需手工编辑 Codex 配置，不用另外安装 Codex 插件。
+首次启动会备份并合并 Codex MCP 配置，保留其他服务，启动本机服务，并显示待导入的 `manifest.json` 完整路径。无需手工编辑 Codex 配置，不用另外安装 Codex 插件。
 
-## 2. 直接导入 FigNexus
+## 2. 在 Figma 导入并配对
 
 在 Figma 桌面端打开可编辑文件，选择 `Plugins → Development → Import plugin from manifest`。
 
@@ -22,13 +22,15 @@
 
 默认安装目录：`%LOCALAPPDATA%/FigmaAIBridge/releases/<版本标识>`。错过提示时双击安装目录的 `开始使用.cmd`；也可运行 `setup-plugin.ps1` 再显示导入路径。
 
-## 3. 配对并设计
+### 配对并设计
 
 重启 Codex 一次。在插件点击“配对本机”，核对插件与自动弹出的本机窗口六位数字相同，点击“是”。无需复制令牌或自己打开助手。
 
 ![配对步骤，数字为演示值](images/pairing.png)
 
 在线后开启“允许创建和编辑”，在 Codex 说：“使用 FigNexus，在当前页面创建一个登录页。”
+
+再次从解压目录或安装目录双击“开始使用”会直接使用已验证的安装版本，不重复写 Codex 配置。取消首次安装时不会启动服务。若检测到配置冲突，会停止并保留原配置。旧 `install.cmd` 仍保留给已有用户和自动安装脚本使用。
 
 ## 日常使用
 
@@ -38,7 +40,7 @@
 
 ## 升级与已有 ID
 
-解压新包并运行 `install.cmd`，安装器会保留配对与日志，更新属于本安装的 MCP 配置。然后在 Figma 导入新安装目录的 manifest；**升级也不需要 New plugin**。旧服务占用 3055 时，关闭自己的旧版本后再启动。
+解压新包并双击 `开始使用.cmd`，启动入口会识别升级，保留配对与日志，更新属于本安装的 MCP 配置。然后在 Figma 导入新安装目录的 manifest；**升级也不需要 New plugin**。旧服务占用 3055 时，关闭自己的旧版本后再启动。
 
 旧版本已有 Figma 分配的 ID 时，安装器从上次安装记录自动读取并保存到数据目录 `plugin-id.json`，后续升级自动复用。同一 ID 不会要求重复选择文件；无 ID 安装不会生成或伪造 ID。
 

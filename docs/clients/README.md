@@ -1,6 +1,6 @@
 # 客户端配置说明
 
-当前发行包只验收 Windows 上的 Codex。普通用户运行 `install.cmd`，安装器备份并合并 MCP 配置，随后重启 Codex一次；无需手动填写配置。完整操作见 [安装指南](../windows-install.md)。
+当前发行包只验收 Windows 上的 Codex。普通用户双击 `开始使用.cmd`，安装器备份并合并 MCP 配置，随后重启 Codex一次；无需手动填写配置。完整操作见 [安装指南](../windows-install.md)。
 
 内部 MCP 条目名为 `figma-ai-bridge`，这是保留的兼容标识。提供 25 个工具，配对由 Figma 插件和本机确认窗口完成。
 
