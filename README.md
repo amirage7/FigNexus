@@ -6,7 +6,7 @@ FigNexus 连接 Codex 与正在运行的 Figma 桌面插件，可以读取画布
 
 ![FigNexus 展开面板与折叠状态条，示例数据](docs/images/panel.png)
 
-> **0.3.5 · Windows x64 + Figma 桌面端 + Codex**。无需发布到 Figma 社区，无需 Figma PAT 或额外 AI API key。其他客户端未纳入本版本验收。
+> **0.3.6 · Windows x64 + Figma 桌面端 + Codex**。无需发布到 Figma 社区，无需 Figma PAT 或额外 AI API key。其他客户端未纳入本版本验收。
 
 ## 下载与首次安装
 
@@ -14,12 +14,15 @@ FigNexus 连接 Codex 与正在运行的 Figma 桌面插件，可以读取画布
 
 ![首次安装：安装、导入、配对、开始设计](docs/images/setup.svg)
 
-1. **安装到本机。** 解压 `FigNexus-0.3.5-Windows.zip`，双击 `install.cmd`。看到配置预览后输入 `YES` 确认。安装器备份并合并 Codex 配置，注册 MCP 服务，随后启动本机服务并打开首次设置。
-2. **取得自己的 Figma 插件 ID。** 在 Figma 桌面端进入 `Plugins → Development → New plugin`，选择 Figma Design / Custom UI 并保存生成目录。在安装器的文件选择窗口选**这个生成目录的 `manifest.json`**。安装器自动读取 ID，写入编译好的 FigNexus。
-3. **导入 FigNexus。** 在 Figma 选择 `Plugins → Development → Import plugin from manifest`，选择安装器显示的**安装目录下 `plugin/manifest.json`**，然后运行 **FigNexus**。这一步选的是安装好的文件，不是上一步的样例文件。
-4. **配对并开始使用。** 重启 Codex 一次。在插件点击 **配对本机**，核对插件与自动弹出的本机窗口六位码相同，点击 **是**。显示在线后开启 **允许创建和编辑**，在 Codex 输入设计需求。
+1. **安装到本机。** 解压 `FigNexus-0.3.6-Windows.zip`，双击 `install.cmd`，看到配置预览后输入 `YES`。安装器自动备份并合并 Codex 配置，启动本机服务，显示要导入的 manifest 完整路径。
+2. **直接导入 FigNexus。** 在 Figma 桌面端选择 `Plugins → Development → Import plugin from manifest`，把安装器显示的**安装目录/plugin/manifest.json** 路径粘贴到“文件名”栏并打开，然后运行 **FigNexus**。无需先 New plugin、创建空白插件或选择其他 manifest 提取 ID。
+3. **配对并开始设计。** 重启 Codex 一次。在插件点击 **配对本机**，核对与自动弹出的本机窗口六位码相同，点击 **是**。在线后开启 **允许创建和编辑**，在 Codex 输入设计需求。
 
-创建和导入开发插件属于 Figma 的首次设置，不能由本机安装器代替。Codex 的 MCP 配置由安装器完成，**不用再安装另一款 Codex 插件或手动粘贴令牌**。跳过设置后，可双击安装目录的 `开始使用.cmd` 继续。详见 [Windows 安装指南](docs/windows-install.md)。
+**无 ID 直接导入已在真实 Figma 桌面端验证：成功导入、运行、在线，并通过原生只读 ping；导入前后 manifest 均没有 id。** 官方 [manifest 文档](https://developers.figma.com/docs/plugins/manifest/) 描述 ID 用于发布更新，[导入指南](https://help.figma.com/hc/en-us/articles/38457121114263-Create-a-Figma-Design-plugin-with-the-Figma-MCP-server-and-agentic-tools) 说明通过开发菜单导入 manifest。这里的可行性以实际验证为依据，不使用伪造 ID 或私有 API。
+
+![真实 Figma 无 ID 导入成功提示](docs/images/import-success.png)
+
+Codex 的 MCP 配置由安装器完成，不用额外安装另一款 Codex 插件或手动粘贴令牌。错过路径提示时双击安装目录的 `开始使用.cmd`。详见 [Windows 安装指南](docs/windows-install.md)。
 
 ## 日常使用
 
@@ -74,7 +77,7 @@ FigNexus 连接 Codex 与正在运行的 Figma 桌面插件，可以读取画布
 
 **无法编辑：** 确认文件有编辑权限，并开启本次插件的编辑开关。聊天授权不能代替插件本地开关。
 
-**换电脑：** 在新机器重新安装并使用自己生成的 Figma 插件 ID。安装器隔离测试和本机真实验收已通过，仍建议在另一台干净 Windows 按首次流程检查一遍。
+**换电脑：** 在新机器重新安装并直接导入安装目录的 manifest，无需创建插件 ID。安装器隔离测试和本机真实验收已通过，仍建议在另一台干净 Windows 按首次流程检查一遍。
 
 ## 开发者
 
@@ -91,7 +94,7 @@ pnpm smoke
 
 `pnpm smoke` 使用模拟插件验证 25 工具，需要 3055 端口空闲。真实 Figma 试验脚本可能修改画布，运行前阅读脚本并使用测试文件。
 
-从 Figma 生成的 manifest 取得数字 ID，运行 `pnpm plugin:id <数字ID>`，再运行 `pnpm build` 并导入 `apps/figma-plugin/dist/manifest.json`。不要提交自己的 ID。Windows 安装包用 `pnpm build:windows` 构建，输出到被忽略的 `.bridge`。
+默认直接导入 `apps/figma-plugin/dist/manifest.json`，不需要 ID。如需复用已有 Figma 分配的 ID，可选运行 `pnpm plugin:id <已有数字ID>` 再构建；不要提交自己的 ID，发行包会自动剥离本地 ID。Windows 安装包用 `pnpm build:windows` 构建，输出到被忽略的 `.bridge`。
 
 目录：`apps/figma-plugin` 插件；`apps/bridge-server` 本机服务；`apps/pairing-helper` 确认助手；`packages/mcp-server` Codex 接口；`packages/protocol` 协议；`scripts/distribution` 安装器。
 

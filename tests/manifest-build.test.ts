@@ -1,0 +1,7 @@
+import {expect,it} from 'vitest';import {mkdtemp,writeFile,readFile} from 'node:fs/promises';import {resolve} from 'node:path';
+it('builds a directly importable manifest without requiring or creating an ID',async()=>{
+ const build=await import('../apps/figma-plugin/scripts/manifest.mjs');const root=await mkdtemp(resolve('.bridge','manifest build ')),source=resolve(root,'source.json'),target=resolve(root,'manifest.json');const manifest={name:'FigNexus',main:'main.js',ui:'index.html',api:'1.0.0'};await writeFile(source,JSON.stringify(manifest));await (build as any).buildManifest(source,target);expect(JSON.parse(await readFile(target,'utf8'))).toEqual(manifest);
+});
+it('preserves an explicitly configured existing ID but rejects invalid identity without overwriting output',async()=>{
+ const build=await import('../apps/figma-plugin/scripts/manifest.mjs');const root=await mkdtemp(resolve('.bridge','manifest identity ')),source=resolve(root,'source.json'),target=resolve(root,'manifest.json');await writeFile(source,JSON.stringify({name:'FigNexus',main:'main.js',ui:'index.html',id:'123456789'}));await (build as any).buildManifest(source,target);const before=await readFile(target,'utf8');expect(JSON.parse(before).id).toBe('123456789');await writeFile(source,JSON.stringify({main:'main.js',ui:'index.html',id:'invented'}));await expect((build as any).buildManifest(source,target)).rejects.toThrow();expect(await readFile(target,'utf8')).toBe(before);
+});

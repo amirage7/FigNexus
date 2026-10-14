@@ -42,8 +42,12 @@ export async function stageDistribution({root,output,nodePath,nodeLicense,instal
  for(const p of builds) await access(join(root,p,'index.js'));
  await mkdir(output,{recursive:true});
  for(const p of builds) await cp(join(root,p),join(output,p),{recursive:true});
- await cp(join(root,'apps/figma-plugin/dist'),join(output,'plugin'),{recursive:true});
+ await mkdir(join(output,'plugin'));
+ for(const file of ['main.js','index.html','manifest.json'])await cp(join(root,'apps/figma-plugin/dist',file),join(output,'plugin',file));
  const manifest=JSON.parse(await readFile(join(output,'plugin/manifest.json'),'utf8'));
+ delete manifest.id;
+ manifest.name='FigNexus';
+ await writeFile(join(output,'plugin/manifest.json'),JSON.stringify(manifest,null,2)+'\n');
  const candidate={...manifest,name:'FigNexus (Production Candidate)',networkAccess:{allowedDomains:['http://localhost:3055','ws://localhost:3055'],reasoning:'Connect only to the local FigNexus on this computer for user-approved automation.'}};
  await writeFile(join(output,'plugin/manifest.production-candidate.json'),JSON.stringify(candidate,null,2));
  await cp(installerSource,join(output,'scripts/distribution'),{recursive:true,filter:source=>!['build.mjs','node-LICENSE.txt'].includes(source.split(/[\\/]/).at(-1))});

@@ -12,7 +12,7 @@ Codex → stdio MCP Server → 本机 Bridge → 插件 UI 通信层 → Figma P
 - `packages/mcp-server`：25 个 MCP 工具及本机启动器。
 - `apps/figma-plugin`：网络、保存配对、本地权限、原生节点读写和导出。
 - `apps/pairing-helper`：本机启动和人工配对确认。
-- `scripts/distribution`：封装运行环境、配置备份合并、首次 ID 设置和卸载。
+- `scripts/distribution`：封装运行环境、配置备份合并、直接导入说明、已有 ID 复用和卸载。
 
 ## 权限与恢复
 
@@ -25,3 +25,5 @@ UI 折叠只改变面板尺寸，同一连接和主线程继续运行。关闭�
 ## 兼容性
 
 产品显示名称为 FigNexus，服务、MCP 配置和本机数据目录保留历史 `figma-ai-bridge` / `FigmaAIBridge` 标识，避免升级破坏已有配对或配置。不会接入官方 Figma MCP、REST PAT 或任意脚本执行通道。当前验收平台为 Windows x64、Figma 桌面端和 Codex。
+
+开发导入不要求先获取插件 ID。源码生成器允许省略 ID，发行包始终移除本地 ID 和临时备份。安装时仅复用当前 manifest、已保存身份或上次受管理安装内已有的真实 ID；无 ID 时直接导入，不生成随机数字或调用注册 API。版本目录改变后仍需通过 Figma 公开菜单导入新路径。
