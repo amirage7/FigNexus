@@ -1,12 +1,12 @@
 # FigNexus Windows 安装指南
 
-0.3.7 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
+0.3.8 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
 
 ![统一开始使用入口](images/setup.svg)
 
 ## 1. 双击开始使用
 
-从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.7-Windows.zip`，完整解压，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入大写 `YES` 回车；完成后继续启动本机服务并显示 Figma 导入路径。不需要单独运行 `install.cmd`。
+从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.8-Windows.zip`，完整解压，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入大写 `YES` 回车；完成后继续启动本机服务并显示 Figma 导入路径。不需要单独运行 `install.cmd`。
 
 首次启动会备份并合并 Codex MCP 配置，保留其他服务，启动本机服务，并显示待导入的 `manifest.json` 完整路径。无需手工编辑 Codex 配置，不用另外安装 Codex 插件。
 

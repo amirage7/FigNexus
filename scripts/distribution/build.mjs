@@ -1,4 +1,4 @@
-import {readFile,writeFile,mkdir,cp,readdir,realpath,access} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,cp,readdir,realpath,access,mkdtemp} from 'node:fs/promises';
 import {resolve,dirname,join,relative} from 'node:path';
 import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
@@ -88,6 +88,12 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
  if(runtime.version!=='v22.16.0'&&!process.env.FIGMA_DISTRIBUTION_NODE_LICENSE)throw new Error('Specify FIGMA_DISTRIBUTION_NODE_LICENSE for runtime '+runtime.version);
  const nodeLicense=resolve(process.env.FIGMA_DISTRIBUTION_NODE_LICENSE??join(root,'scripts/distribution/vendor/node-LICENSE.txt'));
  const result=await stageDistribution({root,output,nodePath,nodeLicense});
+ // Validate the finished production catalog, not a reduced test manifest,
+ // before sealing a public ZIP. This uses an empty isolated profile.
+ const {planStartup}=await import('./bootstrap.mjs');
+ await mkdir(join(root,'.bridge'),{recursive:true});
+ const checkRoot=await mkdtemp(join(root,'.bridge','release-startup-check-'));
+ if(!(await planStartup(output,join(checkRoot,'codex'),join(checkRoot,'data'))).needsInstall)throw new Error('Release startup validation failed');
  const zip=output+'.zip';
  // Environment arguments prevent PowerShell quoting or metacharacter interpretation in paths.
  execFileSync('powershell.exe',['-NoProfile','-Command','Compress-Archive -LiteralPath (Get-ChildItem -LiteralPath $env:FIGMA_ZIP_SOURCE -Force).FullName -DestinationPath $env:FIGMA_ZIP_DEST -CompressionLevel Optimal'],{env:{...process.env,FIGMA_ZIP_SOURCE:output,FIGMA_ZIP_DEST:zip},stdio:'inherit'});
