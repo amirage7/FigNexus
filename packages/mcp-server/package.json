@@ -1,0 +1,17 @@
+{
+  "name": "@bridge/mcp",
+  "version": "0.3.5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --external:@modelcontextprotocol/* --external:zod --outfile=dist/index.js"
+  },
+  "dependencies": {
+    "@bridge/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10"
+  }
+}

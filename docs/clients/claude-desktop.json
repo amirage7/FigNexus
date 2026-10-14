@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "figma-ai-bridge": {
+      "command": "C:/Program Files/nodejs/node.exe",
+      "args": ["C:/FigNexus/packages/mcp-server/dist/index.js"],
+      "env": {"FIGMA_BRIDGE_TOKEN_FILE": "C:/FigNexus/.bridge/token", "FIGMA_BRIDGE_DATA_DIR": "C:/FigNexus/.bridge", "FIGMA_BRIDGE_AUDIT_DIR": "C:/FigNexus/.bridge/audit"}
+    }
+  }
+}

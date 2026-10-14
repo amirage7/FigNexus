@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.bridge/
+.figma-generated/
+*.log
+/verification.md
+/DESIGN.md
+/docs/*
+!/docs/windows-install.md
+!/docs/architecture.md
+!/docs/verification.md
+!/docs/images/
+!/docs/clients/
+.env
+.env.*
+*.token

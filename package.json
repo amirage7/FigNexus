@@ -1,0 +1,41 @@
+{
+  "name": "fignexus",
+  "version": "0.3.5",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build && node scripts/build-pairing-helper.mjs",
+    "build:windows": "node scripts/distribution/build.mjs",
+    "pair": "node apps/pairing-helper/dist/index.js",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "bridge": "node apps/bridge-server/dist/index.js",
+    "mcp": "node packages/mcp-server/dist/index.js",
+    "smoke": "node tests/smoke.mjs",
+    "live": "node tests/live.mjs",
+    "plugin:id": "node apps/figma-plugin/scripts/configure.mjs",
+    "verify": "pnpm check && pnpm --filter @bridge/plugin check:main && pnpm test && pnpm build && pnpm smoke",
+    "accept:read": "node tests/phase2-live.mjs",
+    "accept:create": "node tests/phase2-live.mjs --create",
+    "accept:preview": "node tests/phase34-live.mjs --preview-only",
+    "accept:edit": "node tests/phase34-live.mjs",
+    "accept:delete": "node tests/delete-live.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "tsx": "^4.20.6",
+    "@types/node": "^22.18.0",
+    "@types/ws": "^8.18.1",
+    "@figma/plugin-typings": "^1.117.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.76",
+    "ws": "^8.18.3"
+  }
+}

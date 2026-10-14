@@ -1,0 +1,5 @@
+import {expect,it} from 'vitest';import {execFileSync} from 'node:child_process';import {resolve} from 'node:path';
+it.skipIf(process.platform!=='win32')('Windows PowerShell parses all shipped onboarding scripts including Chinese text',()=>{
+ const code="$ProgressPreference='SilentlyContinue';$taskRows=@();foreach($taskFile in (ConvertFrom-Json $env:FIGMA_TEST_PS_FILES)){$taskTokens=$null;$taskErrors=$null;[System.Management.Automation.Language.Parser]::ParseFile($taskFile,[ref]$taskTokens,[ref]$taskErrors) | Out-Null;$taskRows+=@{file=$taskFile;errors=$taskErrors.Count}};ConvertTo-Json -Compress -InputObject $taskRows";
+ const paths=['setup-plugin.ps1','start.ps1','install.ps1','connect.ps1','uninstall.ps1'].map(name=>resolve('scripts/distribution',name));const output=execFileSync('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(code,'utf16le').toString('base64')],{windowsHide:true,encoding:'utf8',env:{...process.env,FIGMA_TEST_PS_FILES:JSON.stringify(paths)}});for(const row of JSON.parse(output))expect(row.errors,row.file).toBe(0);
+},15000);

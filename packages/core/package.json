@@ -1,0 +1,1 @@
+{"name":"@bridge/core","version":"0.1.0","private":true,"type":"module","exports":"./src/index.ts","scripts":{"build":"esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js"},"dependencies":{"@bridge/protocol":"workspace:*"},"devDependencies":{"esbuild":"^0.25.10"}}

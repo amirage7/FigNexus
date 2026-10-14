@@ -1,0 +1,19 @@
+{
+  "name": "@bridge/server",
+  "version": "0.3.5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --external:fastify --external:@fastify/* --external:ws --external:zod --outfile=dist/index.js"
+  },
+  "dependencies": {
+    "@bridge/core": "workspace:*",
+    "@bridge/protocol": "workspace:*",
+    "fastify": "^5.6.1",
+    "@fastify/websocket": "^11.2.0",
+    "@fastify/cors": "^11.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10"
+  }
+}
