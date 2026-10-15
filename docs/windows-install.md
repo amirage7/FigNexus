@@ -1,12 +1,12 @@
 # FigNexus Windows 安装指南
 
-0.3.8 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
+0.3.9 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
 
 ![统一开始使用入口](images/setup.svg)
 
 ## 1. 双击开始使用
 
-从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.8-Windows.zip`，完整解压，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入大写 `YES` 回车；完成后继续启动本机服务并显示 Figma 导入路径。不需要单独运行 `install.cmd`。
+从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.9-Windows.zip`，完整解压，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入大写 `YES` 回车；完成后继续启动本机服务并显示 Figma 导入路径。不需要单独运行 `install.cmd`。
 
 首次启动会备份并合并 Codex MCP 配置，保留其他服务，启动本机服务，并显示待导入的 `manifest.json` 完整路径。无需手工编辑 Codex 配置，不用另外安装 Codex 插件。
 
@@ -39,6 +39,8 @@
 点击“折叠”保留小状态条即可继续连接；关闭插件会离线。重开后编辑权限默认关闭。Codex 未启动时，也可双击 `开始使用.cmd` 启动服务。
 
 ## 升级与已有 ID
+
+0.3.9 增加独立的画框、文字、矩形和批量创建工具，共29个工具。升级后请完全退出并重启 Codex，同时关闭旧 Figma 插件，从新安装目录导入并运行插件，再开启编辑；新版本的插件界面、主线程和本机服务需要一并更新。
 
 解压新包并双击 `开始使用.cmd`，启动入口会识别升级，保留配对与日志，更新属于本安装的 MCP 配置。然后在 Figma 导入新安装目录的 manifest；**升级也不需要 New plugin**。旧服务占用 3055 时，关闭自己的旧版本后再启动。
 
