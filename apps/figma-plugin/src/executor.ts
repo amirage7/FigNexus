@@ -71,6 +71,7 @@ export function createExecutor(api: Api, canWrite: () => boolean, getContext?: (
     if (method === 'execute') {
       if (!canWrite()) return fail('WRITE_DISABLED');
       const batch = ExecuteInput.parse(raw);
+      if (batch.expectedPageId !== undefined && batch.expectedPageId !== page.id) return fail('PAGE_CHANGED');
       if (batch.operations.some(op => op.op !== 'create')) return editBatch(api, batch, canWrite, context, async (b): Promise<z.infer<typeof import('@bridge/protocol').ExecuteResult>> => await createExecutor(api,canWrite,getContext)('execute',b) as z.infer<typeof import('@bridge/protocol').ExecuteResult>, deleteAllowed());
       const operations = batch.operations.filter(op => op.op === 'create');
       const deadline = Date.now() + 15000;

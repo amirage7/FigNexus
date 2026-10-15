@@ -2,6 +2,7 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {ImageFileImporter} from './image-import';
+import {registerDrawingTools} from './drawing-tools';
 import { Status, Result, ReadInput, ExecuteInput, PreviewInput, Request, ListBackupsInput, RestoreInput,DesignParams,DESIGN_READ_ACTIONS } from '@bridge/protocol';
 
 export function createMcp(token: string, bridgeUrl = 'http://127.0.0.1:3055') {
@@ -58,6 +59,7 @@ export function createMcp(token: string, bridgeUrl = 'http://127.0.0.1:3055') {
   for (const method of ['get_document','get_selection','get_nodes','find_nodes'] as const) {
     server.registerTool(`figma_${method}`, { description: `${method}: bounded flat native-node summaries on the current page. Depth 1-10, limit 1-50, offset cursor, requested fields. Re-read after edits. get_document also returns up to 20 page identities; find_nodes scans at most 10000 nodes within depth.`, inputSchema: { ...ReadInput.shape, ...sessionFields, ...(method === 'get_nodes' ? { ids: z.array(z.string().min(1).max(128)).min(1).max(50) } : {}) }, annotations: { readOnlyHint: true, destructiveHint: false } }, async ({ sessionId, requestId, ...params }) => operation(sessionId, requestId, method, params));
   }
+  registerDrawingTools(server, call, operation);
   server.registerTool('figma_execute', { description: 'Up to 25 whitelisted create/update/clone/reparent/reorder/delete/layout operations on current-page FRAME/TEXT/RECTANGLE/ELLIPSE/LINE/VECTOR. Vectors require bounded structured M/L/C/Q/Z commands; no raw SVG. Paths and round strokes remain natively editable. Local write permission required. Create-only batches support forward $ref; mixed batches reference earlier results. Existing targets get bounded native backups. Delete first returns CONFIRMATION_REQUIRED; the human must confirm and execute the exact batch locally within 5 minutes. Then use the SAME requestId/payload to retrieve the final cached result; acceptance alone is not completion. Stable write IDs are retained for this plugin run (256 maximum); evicted results refuse replay. Never retry uncertain writes after plugin restart. Partial results include completed/skipped and backup IDs. No arbitrary code.', inputSchema: { ...ExecuteInput.shape, ...sessionFields }, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false } }, async ({ sessionId, requestId, ...params }) => operation(sessionId, requestId, 'execute', params));
   async function imageBytes(id: string) {
     const safe=z.string().uuid().parse(id);

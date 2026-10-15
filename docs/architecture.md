@@ -9,7 +9,7 @@ Codex → stdio MCP Server → 本机 Bridge → 插件 UI 通信层 → Figma P
 - `packages/protocol`：严格 Zod schema、操作白名单和大小限制。
 - `packages/core`：会话、串行队列、请求关联、超时和缓存。
 - `apps/bridge-server`：认证、WS/HTTP、配对、脱敏审计、预览资源。
-- `packages/mcp-server`：25 个 MCP 工具及本机启动器。
+- `packages/mcp-server`：29 个 MCP 工具及本机启动器。
 - `apps/figma-plugin`：网络、保存配对、本地权限、原生节点读写和导出。
 - `apps/pairing-helper`：本机启动和人工配对确认。
 - `scripts/distribution`：封装运行环境、配置备份合并、直接导入说明、已有 ID 复用和卸载。
@@ -23,6 +23,8 @@ Codex → stdio MCP Server → 本机 Bridge → 插件 UI 通信层 → Figma P
 UI 折叠只改变面板尺寸，同一连接和主线程继续运行。关闭插件会结束会话。PNG 调用 Figma 的 `exportAsync`，超时保留在途请求及迟到结果；后台渲染的完成时间由 Figma 决定。
 
 ## 兼容性
+
+`figma_create_frame`、`figma_create_text`、`figma_create_rectangle` 使用浅层参数，`figma_create_nodes` 接受最多25项的 JSON 创建数组；即使客户端未暴露复杂的 `figma_execute`，仍可创建原生可编辑图层。JSON 仅为严格验证的数据，不执行脚本，也不允许编辑或删除。各入口复用原执行器、权限、审计、请求ID保护，并将 expectedPageId 传入插件，在写入前校验页面。更新需要同时加载新版 MCP、Bridge 与 Figma 插件；客户端会话也需要刷新工具清单。
 
 产品显示名称为 FigNexus，服务、MCP 配置和本机数据目录保留历史 `figma-ai-bridge` / `FigmaAIBridge` 标识，避免升级破坏已有配对或配置。不会接入官方 Figma MCP、REST PAT 或任意脚本执行通道。当前验收平台为 Windows x64、Figma 桌面端和 Codex。
 

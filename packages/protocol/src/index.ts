@@ -29,7 +29,7 @@ export const Operation = z.union([Creation,
   z.object({ op: z.literal('delete'), target: id }).strict(),
   z.object({ op: z.literal('layout'), target: id, layout: Layout }).strict()
 ]);
-export const ExecuteInput = z.object({ operations: z.array(Operation).min(1).max(25) }).strict();
+export const ExecuteInput = z.object({ expectedPageId: id.optional(), operations: z.array(Operation).min(1).max(25) }).strict();
 export const ListBackupsInput = z.object({cursor:z.number().int().min(0).max(10000).default(0),limit:z.number().int().min(1).max(50).default(20)}).strict();
 export const RestoreInput = z.object({backupId:id,parentId:id,index:z.number().int().min(0).max(10000).optional()}).strict();
 export const BackupMetadata = z.object({version:z.literal(1),backupId:id,nodeId:id,parentId:id,index:z.number().int().min(0).max(1000000),pageId:id,createdAt:z.string().datetime()}).strict();
