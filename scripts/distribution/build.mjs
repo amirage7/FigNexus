@@ -44,6 +44,26 @@ export async function stageDistribution({root,output,nodePath,nodeLicense,instal
  for(const p of builds) await cp(join(root,p),join(output,p),{recursive:true});
  await mkdir(join(output,'plugin'));
  for(const file of ['main.js','index.html','manifest.json'])await cp(join(root,'apps/figma-plugin/dist',file),join(output,'plugin',file));
+ const pluginRoot=join(root,'apps/figma-plugin');
+ const pluginPackage=await metadata(pluginRoot).catch(error=>{if(error.code!=='ENOENT')throw error;});
+ if(pluginPackage?.dependencies?.pptxgenjs){
+  const bundled=await productionClosure([pluginRoot]);
+  const pptx=await metadata(await locate('pptxgenjs',pluginRoot));
+  const notices=[];
+  for(const [id,{path,info}] of bundled){
+   if(info.name.startsWith('@types/')||pptx.browser?.[info.name]===false)continue;
+   const files=(await readdir(path,{withFileTypes:true})).filter(entry=>entry.isFile()&&/^(licen[cs]e|copying|notice)(\.|$)/i.test(entry.name));
+   const texts=await Promise.all(files.map(file=>readFile(join(path,file.name),'utf8')));
+   if(texts.length===0){
+    const readme=await readFile(join(path,'README.md'),'utf8').catch(error=>{if(error.code!=='ENOENT')throw error;});
+    const position=readme?.search(/^#{1,3}[ \t]+licen[cs]e[ \t]*\r?$/im)??-1;
+    if(position<0)throw Error('License notice missing for '+id);
+    texts.push(readme.slice(position).trim());
+   }
+   notices.push(id+'\n'+texts.join('\n\n'));
+  }
+  await writeFile(join(output,'plugin/THIRD-PARTY-NOTICES.txt'),notices.join('\n\n----------------------------------------\n\n'));
+ }
  const manifest=JSON.parse(await readFile(join(output,'plugin/manifest.json'),'utf8'));
  delete manifest.id;
  manifest.name='FigNexus';

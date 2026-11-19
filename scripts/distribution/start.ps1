@@ -26,4 +26,4 @@ $taskInstalledRoot = $taskPlan.installDir
 if($Setup -or -not(Test-Path -LiteralPath (Join-Path $taskInstalledRoot 'plugin/.import-instructions-shown'))){& (Join-Path $taskInstalledRoot 'setup-plugin.ps1') -DataRoot $DataRoot}
 if ($taskInstalledNow) { Write-Host '安装完成，请重启 Codex 一次以加载接口。' }
 Write-Host '在 Figma 运行 FigNexus，首次点击 配对本机，核对六位码并确认。'
-Write-Host '以后：运行 Figma 插件 → 自动在线 → 开启编辑 → 在 Codex 说需求。'
+Write-Host '以后：运行 Figma 插件 → 自动在线 → 在 Codex 说需求。'

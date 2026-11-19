@@ -2,6 +2,7 @@ import {type FileContext,type ExecuteResult} from '@bridge/protocol';
 import {DesignParams,VariableValue,type DesignOutput} from '../../../packages/protocol/src/design';
 import {z} from 'zod';
 import {BACKUP_KEY,CONTAINER_KEY} from './backups';
+import {assertPrivateData,editError} from './edit-results';
 export const OWNER_KEY='ai-bridge-variable-owner-v1',HISTORY_KEY='ai-bridge-variable-history-v1';
 type Api=Pick<PluginAPI,'variables'|'currentPage'|'getNodeByIdAsync'|'createFrame'|'loadFontAsync'|'commitUndo'>;
 type Result=z.infer<typeof ExecuteResult>&{design:DesignOutput};
@@ -54,12 +55,14 @@ export function createVariables(api:Api,canWrite:()=>boolean,context:()=>FileCon
   const p=DesignParams.parse(raw),page=api.currentPage,write='expectedPageId'in p,deadline=Date.now()+15000;
   const result:Result={context:context(),complete:false,created:[],refs:{},completed:[],backups:[],skipped:[],design:{action:p.action}};
   const check=()=>{if(write&&!canWrite())fail('WRITE_DISABLED');if(write&&p.expectedPageId!==page.id)fail('PAGE_CHANGED');if(api.currentPage.id!==page.id)fail('PAGE_CHANGED');if(Date.now()>deadline)fail('EXECUTION_DEADLINE');};
+  const residualIds:string[]=[];
   let newCollection:VariableCollection|undefined,newVariable:Variable|undefined,mutated=false,observe:(()=>void)|undefined,rollbackHistory:(()=>void)|undefined;
   const complete=()=>{if(!result.completed!.includes(0))result.completed!.push(0);};
   const getCollection=async(id:string)=>{const c=await api.variables.getVariableCollectionByIdAsync(id);check();return c;};
   const getVariable=async(id:string)=>{const v=await api.variables.getVariableByIdAsync(id);check();if(!v)fail('VARIABLE_NOT_FOUND');const c=await getCollection(v!.variableCollectionId);return {v:v!,c:c!};};
   try{
    check();
+   assertPrivateData(api,(api as Api&{root?:BaseNode}).root?.getPluginData?(api as Api&{root:BaseNode}).root:undefined);
    if(p.action==='variables_list'){
     const collections=await api.variables.getLocalVariableCollectionsAsync();check();const variables=await api.variables.getLocalVariablesAsync();check();
     const total=collections.length+variables.length,scanned=Math.min(10000,total),end=Math.min(p.cursor+p.limit,scanned),cs:NonNullable<DesignOutput['collections']>=[],vs:NonNullable<DesignOutput['variables']>=[];
@@ -109,7 +112,11 @@ export function createVariables(api:Api,canWrite:()=>boolean,context:()=>FileCon
      check();copy=n.clone();mutated=true;check();container=api.createFrame();check();container.name=`AI Bridge Backups · ${new Date().toISOString()}`;container.setPluginData(CONTAINER_KEY,'1');container.visible=false;container.locked=true;
      check();copy.setPluginData(BACKUP_KEY,JSON.stringify({version:1,backupId:copy.id,nodeId:n.id,parentId:parent!.id,index,pageId:page.id,createdAt:new Date().toISOString()}));container.appendChild(copy);
      result.backups!.push({nodeId:n.id,backupId:copy.id,parentId:parent!.id,index});
-    }catch(error){if(copy&&!copy.removed)copy.remove();if(container&&!container.removed)container.remove();throw error;}
+    }catch(error){
+     for(const object of [copy,container]){if(!object||object.removed)continue;try{object.remove();}catch{}}
+     for(const object of [copy,container])if(object&&!object.removed)residualIds.push(object.id);
+     throw error;
+    }
     Object.assign(result.design,{variableId:v.id,collectionId:c.id,field:p.field,value:direct(v,c)});
     observe=()=>{
      // Native FRAME/RECTANGLE cornerRadius bindings read back as four individual aliases.
@@ -127,9 +134,12 @@ export function createVariables(api:Api,canWrite:()=>boolean,context:()=>FileCon
    // Only objects created by this request are eligible for cleanup. Native backups are retained.
    if(newVariable){try{newVariable.remove();result.completed=[];delete result.design.variableId;delete result.design.value;}catch{result.design.variableId=newVariable.id;try{const value=VariableValue.safeParse(Object.values(newVariable.valuesByMode)[0]);if(value.success)result.design.value=value.data;}catch{}}}
    if(newCollection){try{newCollection.remove();result.completed=[];delete result.design.collectionId;}catch{result.design.collectionId=newCollection.id;}}
-   result.failed={index:0,code:'VARIABLE_FAILED',message:(error instanceof Error?error.message:'VARIABLE_FAILED').slice(0,512)};
+   const reason=editError(error);result.failed={index:0,code:reason.code==='PLUGIN_DATA_UNAVAILABLE'?reason.code:'VARIABLE_FAILED',message:reason.message};
    if(mutated)try{api.commitUndo();}catch{}
   }
+  result.status=result.complete?'complete':residualIds.length||result.completed!.length||result.backups!.length||result.design.historyChanged||newVariable&&result.design.variableId===newVariable.id||newCollection&&result.design.collectionId===newCollection.id?'partial':'none';
+  if(!result.complete){if(newVariable&&result.design.variableId===newVariable.id)residualIds.push(newVariable.id);if(newCollection&&result.design.collectionId===newCollection.id)residualIds.push(newCollection.id);}
+  result.results=[{index:0,op:p.action,status:result.complete?'completed':'failed',...(result.failed?{error:{code:result.failed.code,message:result.failed.message}}:{}),...(residualIds.length?{residualIds}:{})}];
   result.context=context();return result;
  };
 }

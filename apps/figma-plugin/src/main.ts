@@ -2,14 +2,15 @@ import { UiMessage, Result,isWriteRequest, type Request,type RequestProgress } f
 import { createExecutor } from './executor';
 import {PairingStorage} from './pairing-storage';
 import {PanelPreferences} from './panel';
+import { CanvasCommand } from './canvas-tools-model';
+import { createCanvasTools } from './canvas-tools-main';
 declare const __html__: string;
 const instanceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-let writeEnabled = false;
-function context() { return { instanceId, document: { id: figma.root.id, name: figma.root.name }, page: { id: figma.currentPage.id, name: figma.currentPage.name }, writeEnabled }; }
+function context() { return { instanceId, fileKey: figma.fileKey, document: { id: figma.root.id, name: figma.root.name }, page: { id: figma.currentPage.id, name: figma.currentPage.name }, writeEnabled: true }; }
 let deleteApproved = false;
 let activeRequestId:string|undefined;
 const progress=(stage:RequestProgress['stage'],requestId=activeRequestId)=>{if(requestId)figma.ui.postMessage({type:'progress',requestId,stage});};
-const execute = createExecutor(figma, () => writeEnabled, context, () => deleteApproved,stage=>progress(stage));
+const execute = createExecutor(figma, () => true, context, () => deleteApproved,stage=>progress(stage));
 const confirmations = new Map<string, { confirmationId: string; fingerprint: string; pageId: string; expires: number; approved: boolean; request: Extract<Request,{method:'execute'}> }>();
 const cache = new Map<string, { fingerprint: string; result: Result }>();
 // Never evict executed write IDs. Evicted results must not permit a second mutation.
@@ -17,6 +18,10 @@ const writes = new Map<string, string>();
 let pending = Promise.resolve();
 let executingConfirmation: {requestId:string;confirmationId:string}|undefined;
 async function run(p: Request) {
+  if (p.chatPageId !== undefined && p.chatPageId !== figma.currentPage.id) {
+    figma.ui.postMessage({ type: 'result', requestId: p.requestId, ok: false, error: { code: 'PAGE_CHANGED', message: 'The current page changed after this chat request started.' } });
+    return;
+  }
   const fingerprint = JSON.stringify(p), previous = cache.get(p.requestId);
   if (previous) {
     figma.ui.postMessage(previous.fingerprint === fingerprint ? previous.result : { type: 'result', requestId: p.requestId, ok: false, error: { code: 'IDEMPOTENCY_CONFLICT', message: 'Request ID has a different payload' } }); return;
@@ -29,7 +34,7 @@ async function run(p: Request) {
     figma.ui.postMessage({type:'result',requestId:p.requestId,ok:false,error:{code:'IDEMPOTENCY_CONFLICT',message:'Pending confirmation belongs to another payload'}});return;
   }
   if (isWriteRequest(p)) {
-    if (p.method==='execute' && writeEnabled && p.params.operations.some(op => op.op === 'delete')) {
+    if (p.method==='execute' && p.params.operations.some(op => op.op === 'delete')) {
       let grant = confirmations.get(p.requestId);
       if (!grant || grant.fingerprint !== fingerprint || grant.pageId !== figma.currentPage.id || grant.expires < Date.now() || !grant.approved) {
         for (const [id, item] of confirmations) if (item.expires < Date.now()) confirmations.delete(id);
@@ -61,7 +66,31 @@ async function run(p: Request) {
 figma.showUI(__html__, { width: 420, height: 470, themeColors: true });
 const panel=new PanelPreferences(figma.clientStorage,(w,h)=>figma.ui.resize(w,h),message=>figma.ui.postMessage(message));
 const pairing=new PairingStorage(figma.clientStorage,message=>figma.ui.postMessage(message));
+const canvas=createCanvasTools(figma,message=>figma.ui.postMessage(message));
+let activeExport:string|undefined;
 figma.ui.onmessage = raw => {
+  if(raw?.type==='canvas-selection-request'){canvas.selection();return;}
+  if(raw?.type==='canvas-abandon'){
+    if(activeExport===raw.id) activeExport=undefined;
+    return;
+  }
+  const local=CanvasCommand.safeParse(raw);
+  if(local.success){
+    const command=local.data;
+    if(command.type==='canvas-export'){
+      if(activeExport){
+        figma.ui.postMessage({type:'canvas-error',id:command.id,message:'上一个导出仍在处理。'});
+        return;
+      }
+      activeExport=command.id;
+      const run=canvas.prepare(command,()=>activeExport===command.id);
+      void pending.then(run).catch(()=>{}).then(()=>{if(activeExport===command.id) activeExport=undefined;});
+    }else{
+      const run=canvas.prepare(command);
+      pending=pending.then(run).catch(()=>{});
+    }
+    return;
+  }
   const parsed = UiMessage.safeParse(raw);
   if (!parsed.success) return;
   const p = parsed.data;
@@ -69,19 +98,18 @@ figma.ui.onmessage = raw => {
   if(p.type==='panel-mode'){const blocked=Array.from(confirmations.values()).some(grant=>!grant.approved&&grant.pageId===figma.currentPage.id&&grant.expires>Date.now());void panel.setCompact(p.compact,blocked);return;}
   if(p.type==='pairing-load'||p.type==='pairing-save'||p.type==='pairing-forget'){void pairing.handle(p);return;}
   if (p.type === 'context-request') figma.ui.postMessage({ type: 'context', context: context() });
-  else if (p.type === 'set-write') { writeEnabled = p.enabled; if (!writeEnabled) confirmations.clear(); figma.ui.postMessage({ type: 'context', context: context() }); }
   else if (p.type === 'confirm-delete') {
     const grant = confirmations.get(p.requestId);
     const acknowledge = (state:'accepted'|'cancelled'|'invalid') => figma.ui.postMessage({type:'confirmation_state',requestId:p.requestId,confirmationId:p.confirmationId,state});
     if(executingConfirmation?.requestId===p.requestId&&executingConfirmation.confirmationId===p.confirmationId){acknowledge('accepted');return;}
-    if (!writeEnabled || !grant || grant.confirmationId !== p.confirmationId || grant.expires <= Date.now() || grant.pageId !== figma.currentPage.id) { acknowledge('invalid'); return; }
+    if (!grant || grant.confirmationId !== p.confirmationId || grant.expires <= Date.now() || grant.pageId !== figma.currentPage.id) { acknowledge('invalid'); return; }
     // Acceptance starts execution; later cancel/duplicate clicks cannot retract it.
     if(grant.approved){acknowledge('accepted');return;}
     if (!p.approved) { confirmations.delete(p.requestId); acknowledge('cancelled'); return; }
     acknowledge('accepted');
     grant.approved = true;
     pending = pending.then(async () => {
-      if (!writeEnabled || confirmations.get(p.requestId) !== grant || grant.pageId !== figma.currentPage.id || grant.expires <= Date.now() || JSON.stringify(grant.request) !== grant.fingerprint) {
+      if (confirmations.get(p.requestId) !== grant || grant.pageId !== figma.currentPage.id || grant.expires <= Date.now() || JSON.stringify(grant.request) !== grant.fingerprint) {
         if(confirmations.get(p.requestId)===grant)confirmations.delete(p.requestId);
         acknowledge('invalid'); return;
       }
@@ -91,7 +119,36 @@ figma.ui.onmessage = raw => {
   else {progress('received',p.requestId);pending = pending.then(() => run(p)).catch(() => {});}
 };
 let observedPage:PageNode|undefined;
-const invalidate=()=>execute.invalidatePreview();
-function watchPage(){observedPage?.off?.('nodechange',invalidate);observedPage=figma.currentPage;observedPage.on?.('nodechange',invalidate);}
+let refreshQueued=false;
+let refreshAgain=false;
+function scheduleRefresh(){
+  if(!figma.currentPage.findAllWithCriteria) return;
+  refreshAgain=true;
+  if(refreshQueued) return;
+  refreshQueued=true;
+  pending=pending.then(async()=>{
+    while(refreshAgain){
+      refreshAgain=false;
+      await canvas.refresh(figma.currentPage);
+    }
+  }).catch(()=>{}).then(()=>{refreshQueued=false;if(refreshAgain) scheduleRefresh();});
+}
+function nodesChanged(){
+  execute.invalidatePreview();
+  canvas.selection();
+  scheduleRefresh();
+}
+function watchPage(){
+  observedPage?.off?.('nodechange',nodesChanged);
+  observedPage=figma.currentPage;
+  observedPage.on?.('nodechange',nodesChanged);
+  scheduleRefresh();
+}
 watchPage();
-figma.on('currentpagechange', () => {invalidate();watchPage();figma.ui.postMessage({ type: 'context', context: context() });});
+figma.on('selectionchange',canvas.selection);
+figma.on('currentpagechange', () => {
+  execute.invalidatePreview();
+  watchPage();
+  canvas.selection();
+  figma.ui.postMessage({ type: 'context', context: context() });
+});

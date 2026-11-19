@@ -36,7 +36,7 @@ try {
   assert(query.ok && query.data.nodes.every(n => n.type === 'FRAME'));
   report.checks.push({ tool: 'figma_find_nodes', count: query.data.nodes.length });
   if (process.argv.includes('--create')) {
-    assert(status.sessions[0].context.writeEnabled, 'Enable write permission in the plugin first');
+    assert(status.sessions[0].context.writeEnabled, 'Use the current FigNexus plugin build with editing enabled by default');
     // Place a new isolated frame to the right of all current top-level content.
     let right = 0, cursor = 0;
     for (let i = 0; i < 500; i++) {

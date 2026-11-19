@@ -17,7 +17,7 @@ try{
   const status=await call('figma_get_status');
   const matches=status.sessions.filter(s=>process.env.FIGMA_ACCEPT_INSTANCE_ID?s.context.instanceId===process.env.FIGMA_ACCEPT_INSTANCE_ID:s.context.document.name===evidence.created.result.context.document.name&&s.context.page.id===evidence.created.result.context.page.id);
   assert.equal(matches.length,1,'Exactly one matching live plugin required');const runtime=matches[0].context.instanceId;
-  assert(matches[0].context.writeEnabled,'Local write permission required');
+  assert(matches[0].context.writeEnabled,'Use the current FigNexus plugin build with editing enabled by default');
   if(state)assert.equal(state.runtime,runtime,'Never replay uncertain Phase5 writes after a plugin restart; inspect saved state first');
   else{state={timestamp:new Date().toISOString(),runtime,frameId,requests:{},results:{}};await save();}
   async function session(){const current=await call('figma_get_status');const same=current.sessions.filter(s=>s.context.instanceId===runtime&&s.context.page.id===matches[0].context.page.id);assert.equal(same.length,1,'Keep this plugin runtime/page connected');return same[0].sessionId;}

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { VERSION,isWriteRequest, type FileContext, type Request, type Result } from '@bridge/protocol';
-type Job = { message: Request; promise: Promise<Result>; resolve: (r: Result) => void; reject: (e: Error) => void; timedOut?: boolean; timer?: ReturnType<typeof setTimeout> };
+type Job = { message: Request; promise: Promise<Result>; resolve: (r: Result) => void; reject: (e: Error) => void; deadline: number; timedOut?: boolean; timer?: ReturnType<typeof setTimeout> };
 type Session = { sessionId: string; transport: 'ws' | 'http'; context: FileContext; lastSeen: number; send: (r: Request) => void; jobs: Map<string, Job>; queue: Job[]; active?: Job; cache: Map<string, Result>; fingerprints: Map<string, string>; close: () => void };
 export class Sessions {
   private sessions = new Map<string, Session>();
-  constructor(readonly leaseMs = 10_000, readonly timeoutMs = 5_000) {}
+  constructor(readonly leaseMs = 10_000, readonly timeoutMs = 5_000, readonly httpLeaseMs = leaseMs) {}
   connect(context: FileContext, transport: 'ws' | 'http', send: (r: Request) => void, close = () => {}) {
     for (const s of this.sessions.values()) if (s.context.instanceId === context.instanceId) this.disconnect(s.sessionId);
     if (this.sessions.size >= 16) throw new Error('CAPACITY');
@@ -33,6 +33,7 @@ export class Sessions {
     this.expire();
     const s = this.sessions.get(id);
     if (!s) return Promise.reject(new Error('OFFLINE'));
+    if (s.transport === 'http' && Date.now() - s.lastSeen > this.leaseMs) return Promise.reject(new Error('PLUGIN_PAUSED'));
     if (message.requestId !== requestId) return Promise.reject(new Error('INVALID_REQUEST'));
     const fingerprint = JSON.stringify(message);
     if (s.fingerprints.has(requestId) && s.fingerprints.get(requestId) !== fingerprint) return Promise.reject(new Error('IDEMPOTENCY_CONFLICT'));
@@ -44,14 +45,15 @@ export class Sessions {
     let resolve!: Job['resolve'], reject!: Job['reject'];
     const promise = new Promise<Result>((yes, no) => { resolve = yes; reject = no; });
     s.fingerprints.set(requestId, fingerprint);
-    const job: Job = { message, promise, resolve, reject };
+    const timeout = isWriteRequest(message) || message.method === 'export_preview' ? Math.max(this.timeoutMs, 20000) : this.timeoutMs;
+    const job: Job = { message, promise, resolve, reject, deadline: Date.now() + timeout };
     job.timer = setTimeout(() => {
       job.reject(new Error('TIMEOUT'));
       // A request deadline does not prove transport death. Keep the serial
       // barrier and fingerprint until the late result or actual disconnect.
       if (s.active === job) job.timedOut = true;
       else { s.jobs.delete(requestId); s.fingerprints.delete(requestId); s.queue = s.queue.filter(item => item !== job); }
-    }, isWriteRequest(message)||message.method==='export_preview' ? Math.max(this.timeoutMs, 20000) : this.timeoutMs);
+    }, timeout);
     s.jobs.set(requestId, job); s.queue.push(job); this.pump(s);
     return promise;
   }
@@ -61,6 +63,20 @@ export class Sessions {
     if (!job) return;
     s.active = job;
     try { s.send(job.message); } catch { this.disconnect(s.sessionId); }
+  }
+  discardExpiredUnpolled(id: string, requestId: string) {
+    const s = this.sessions.get(id);
+    const job = s?.active;
+    if (!s || s.transport !== 'http' || !job || job.message.requestId !== requestId) return true;
+    if (!job.timedOut && Date.now() < job.deadline) return false;
+    // This request was still in the bridge's polling queue. No canvas call started.
+    clearTimeout(job.timer);
+    job.reject(new Error('TIMEOUT'));
+    s.jobs.delete(requestId);
+    s.fingerprints.delete(requestId);
+    s.active = undefined;
+    this.pump(s);
+    return true;
   }
   respond(id: string, result: Result) {
     const s = this.sessions.get(id), job = s?.active;
@@ -79,6 +95,11 @@ export class Sessions {
     for (const job of s.jobs.values()) { clearTimeout(job.timer); job.reject(new Error('OFFLINE')); }
     s.jobs.clear(); s.queue.length = 0; s.close();
   }
-  expire(now = Date.now()) { for (const s of this.sessions.values()) if (now - s.lastSeen > this.leaseMs) this.disconnect(s.sessionId); }
+  expire(now = Date.now()) {
+    for (const s of this.sessions.values()) {
+      const lease = s.transport === 'http' ? this.httpLeaseMs : this.leaseMs;
+      if (now - s.lastSeen > lease) this.disconnect(s.sessionId);
+    }
+  }
   close() { for (const id of this.sessions.keys()) this.disconnect(id); }
 }

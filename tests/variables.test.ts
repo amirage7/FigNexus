@@ -2,6 +2,23 @@ import {it,expect,vi} from 'vitest';
 import {createVariables,OWNER_KEY,HISTORY_KEY} from '../apps/figma-plugin/src/variables';
 import {fixture} from './figma-fixture';
 import {listBackups,CONTAINER_KEY} from '../apps/figma-plugin/src/backups';
+it('preflights missing manifest identity before creating variable collections',async()=>{
+ const f=setup();f.api.pluginId=undefined;
+ const r:any=await f.invoke('collection_create',{name:'Blocked'});
+ expect(r.complete).toBe(false);expect(r.failed.code).toBe('PLUGIN_DATA_UNAVAILABLE');expect(f.collections.size).toBe(0);
+});
+it('preflights unavailable private plugin data before creating objects',async()=>{
+ const f=setup();f.api.root.getPluginData=()=>{throw Error('Private data unavailable');};
+ const r:any=await f.invoke('collection_create',{name:'Blocked'});
+ expect(r.failed.code).toBe('PLUGIN_DATA_UNAVAILABLE');expect(f.collections.size).toBe(0);
+});
+it.each([{blockContainer:false,count:1},{blockContainer:true,count:2}])('reports variable binding residuals after independent cleanup: $count',async({blockContainer,count})=>{
+ const f=setup(),v=await f.token(),n=f.node(),clone=n.clone;
+ if(blockContainer){const create=f.api.createFrame;f.api.createFrame=()=>{const frame=create();frame.remove=()=>{throw Error('CONTAINER_CLEANUP_FAILED');};return frame;};}
+ n.clone=()=>{const copy=clone();copy.setPluginData=()=>{throw Error('METADATA_FAILED');};copy.remove=()=>{throw Error('CLEANUP_FAILED');};return copy;};
+ const r:any=await f.invoke('variable_bind',{variableId:v.id,nodeId:n.id,field:'width'});
+ expect(r.status).toBe('partial');expect(r.results[0].residualIds).toHaveLength(count);expect(r.failed.message).toContain('METADATA_FAILED');expect(n.boundVariables).toEqual({});
+});
 function setup(){
  const f=fixture(),collections=new Map<string,any>(),variables=new Map<string,any>();let seq=0,allowed=true;
  const data=()=>{const d=new Map<string,string>();return {getPluginData:(k:string)=>d.get(k)??'',setPluginData:(k:string,v:string)=>d.set(k,v)};};

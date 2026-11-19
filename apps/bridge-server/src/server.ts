@@ -11,13 +11,15 @@ import type {AuditStore} from './audit';
 import {AuditValidationError} from './audit';
 import type {QuickPairing} from './quick-pairing';
 import type {LocalPairPrompt} from './local-pair-prompt';
+import type { CodexChats } from './codex-chat';
 
-export async function createBridge(token: string, logging = false, audit?:AuditStore, timing:{leaseMs?:number;wsHeartbeatMs?:number}={},quickPairing?:QuickPairing,localPrompt?:LocalPairPrompt) {
+export async function createBridge(token: string, logging = false, audit?:AuditStore, timing:{leaseMs?:number;wsHeartbeatMs?:number}={},quickPairing?:QuickPairing,localPrompt?:LocalPairPrompt, chat?: CodexChats) {
   if (token.length < 32 || token.length > 256) throw new Error('Token must be 32–256 characters');
   const app = Fastify({ bodyLimit: 65_536, logger: logging ? { redact: ['req.headers.authorization','req.headers.x-figma-pair-approval'] } : false });
   const leaseMs=timing.leaseMs??10000,wsHeartbeatMs=timing.wsHeartbeatMs??3000;
   if(!Number.isSafeInteger(leaseMs)||!Number.isSafeInteger(wsHeartbeatMs)||wsHeartbeatMs<1||leaseMs<=wsHeartbeatMs)throw Error('Invalid heartbeat timing');
-  const sessions = new Sessions(leaseMs);
+  // Reserve the polling session across a hidden renderer's minute-scale timer throttling.
+  const sessions = new Sessions(leaseMs, undefined, Math.max(180_000, leaseMs));
   const previews = new PreviewStore();
   const polls = new Map<string, Request[]>();
   let auditFailure=false;
@@ -34,6 +36,8 @@ export async function createBridge(token: string, logging = false, audit?:AuditS
     entry.stages.push({stage:p.stage,at:Date.now()});if(entry.stages.length>10)entry.stages.shift();
   };
   const getSession=(id:string)=>sessions.status().sessions.find(s=>s.sessionId===id);
+  const credential = (auth?: string) => auth?.replace(/^Bearer /, '');
+  const chatScope = (auth?: string) => chat?.scope(credential(auth) ?? '');
   const receiveResult=async(id:string,result:Result)=>{
     const session=getSession(id);if(!session)return;
     let delivered=result;
@@ -54,16 +58,60 @@ export async function createBridge(token: string, logging = false, audit?:AuditS
       return;
     }
     if (req.url === '/v1/ws' && req.headers.upgrade?.toLowerCase() === 'websocket') return;
-    if (!valid(req.headers.authorization?.replace(/^Bearer /, ''))) return reply.code(401).send({ code: 'UNAUTHORIZED' });
+    if (valid(credential(req.headers.authorization))) return;
+    if (((req.method === 'GET' && req.url === '/v1/status') || (req.method === 'POST' && req.url === '/v1/request')) &&
+        chatScope(req.headers.authorization)) return;
+    return reply.code(401).send({ code: 'UNAUTHORIZED' });
   });
   app.setErrorHandler((error, req, reply) => {
     const code = error instanceof Error ? error.message : 'INTERNAL';
-    const status = code === 'AUDIT_UNAVAILABLE' ? 503 : code === 'OFFLINE'||code==='PREVIEW_NATIVE_BUSY'||code==='PREVIEW_INVALIDATED'||code==='PAGE_CHANGED' ? 409 : ['TIMEOUT','NATIVE_NODE_TIMEOUT','NATIVE_EXPORT_TIMEOUT','PREVIEW_PENDING'].includes(code) ? 504 : code === 'QUEUE_FULL' || code === 'CAPACITY'||code==='PAIR_BUSY'||code==='PAIR_RATE_LIMIT'||code==='PAIR_CAPACITY' ? 429 : 400;
+    const status = code === 'AUDIT_UNAVAILABLE' ? 503 : ['OFFLINE','PLUGIN_PAUSED','PREVIEW_NATIVE_BUSY','PREVIEW_INVALIDATED','PAGE_CHANGED'].includes(code) ? 409 : ['TIMEOUT','NATIVE_NODE_TIMEOUT','NATIVE_EXPORT_TIMEOUT','PREVIEW_PENDING'].includes(code) ? 504 : code === 'QUEUE_FULL' || code === 'CAPACITY'||code==='PAIR_BUSY'||code==='PAIR_RATE_LIMIT'||code==='PAIR_CAPACITY' ? 429 : 400;
     req.log.warn({ code: status === 400 ? 'INVALID_REQUEST' : code }, 'Bridge request failed');
     reply.code(status).send({ code: status === 400 ? 'INVALID_REQUEST' : code });
   });
-  const welcome = (sessionId: string) => ({ type: 'welcome', version: VERSION, sessionId, heartbeatMs: 3000, leaseMs: sessions.leaseMs });
-  app.get('/v1/status', async () => sessions.status());
+  const welcome = (sessionId: string, transport: 'ws' | 'http') => ({
+    type: 'welcome', version: VERSION, sessionId,
+    heartbeatMs: transport === 'http' ? 1000 : wsHeartbeatMs,
+    leaseMs: transport === 'http' ? sessions.httpLeaseMs : sessions.leaseMs,
+  });
+  app.get('/v1/status', async (req, reply) => {
+    const status = sessions.status();
+    if (valid(credential(req.headers.authorization))) return status;
+    const target = chatScope(req.headers.authorization);
+    if (!target) return reply.code(401).send({ code: 'UNAUTHORIZED' });
+    const scoped = status.sessions.filter(s => s.sessionId === target.sessionId && s.context.page.id === target.context.page.id);
+    return { ...status, online: scoped.length > 0, sessions: scoped };
+  });
+  if (chat) {
+    const SessionId = z.string().uuid();
+    const Input = z.object({ sessionId: SessionId, requestId: z.string().uuid(), text: z.string().trim().min(1).max(8000), pageId: z.string().min(1).max(128).optional() }).strict();
+    app.get<{ Params: { id: string } }>('/v1/chat/:id', async req => {
+      const target = getSession(SessionId.parse(req.params.id));
+      if (!target) throw Error('OFFLINE');
+      return chat.snapshot(target);
+    });
+    app.post('/v1/chat/send', async (req, reply) => {
+      const input = Input.parse(req.body);
+      const target = getSession(input.sessionId);
+      if (!target) throw Error('OFFLINE');
+      if (input.pageId && input.pageId !== target.context.page.id) throw Error('PAGE_CHANGED');
+      try {
+        await chat.send(target, input.requestId, input.text);
+        if (!getSession(input.sessionId)) chat.disconnect(input.sessionId);
+      } catch (error) {
+        if (error instanceof Error && ['CHAT_BUSY', 'CHAT_CONFLICT'].includes(error.message)) return reply.code(409).send({ code: error.message });
+        throw error;
+      }
+      return { accepted: true };
+    });
+    app.post('/v1/chat/stop', async req => {
+      const { sessionId, requestId } = z.object({ sessionId: SessionId, requestId: z.string().uuid() }).strict().parse(req.body);
+      const target = getSession(sessionId);
+      if (!target) throw Error('OFFLINE');
+      chat.stop(target, requestId);
+      return { accepted: true };
+    });
+  }
   app.get('/v1/health',async()=>({service:'figma-ai-bridge',version:'0.3.9',protocolVersion:1,capabilities:['quick-pairing','timeout-barrier','native-visual','native-design','auto-pair-prompt','retained-preview','native-vectors']}));
   if(localPrompt)app.addHook('onClose',async()=>{localPrompt.close();});
   if(quickPairing){
@@ -84,12 +132,23 @@ export async function createBridge(token: string, logging = false, audit?:AuditS
     return audit?{enabled:true,...audit.status(),healthy:!auditFailure&&audit.status().healthy,unresolved:audit.unresolved(query.cursor,query.limit),connectionDiagnostics,sessionActivity}:{enabled:false,healthy:false,connectionDiagnostics,sessionActivity};
   });
   app.post('/v1/ping', async req => { const p = PingInput.parse(req.body); return sessions.request(p.sessionId, p.requestId); });
-  app.post('/v1/request', async req => {
-    const p=OperationInput.parse(req.body),session=getSession(p.sessionId);if(!session)throw Error('OFFLINE');
+  app.post('/v1/request', async (req, reply) => {
+    const p=OperationInput.parse(req.body);
+    const scoped = !valid(credential(req.headers.authorization));
+    const target = scoped ? chatScope(req.headers.authorization) : undefined;
+    if (scoped && (!target || target.sessionId !== p.sessionId || !['get_document', 'get_selection', 'get_nodes', 'find_nodes', 'execute'].includes(p.request.method))) {
+      return reply.code(403).send({ code: 'CHAT_SCOPE_MISMATCH' });
+    }
+    const session=getSession(p.sessionId);if(!session)throw Error('OFFLINE');
+    if (target) {
+      if (target.context.page.id !== session.context.page.id) throw Error('PAGE_CHANGED');
+      p.request.chatPageId = target.context.page.id;
+    }
     const isWrite=isWriteRequest(p.request);
     if(audit&&isWrite){try{await audit.start(session.context,p.request);}catch{auditFailure=true;throw Error('AUDIT_UNAVAILABLE');}}
     try{
       const current=getSession(p.sessionId);if(!current||current.context.page.id!==session.context.page.id)throw Error('OFFLINE');
+      if (target && !chatScope(req.headers.authorization)) throw Error('OFFLINE');
       return await trackDispatch(p.sessionId,p.request);
     }catch(e){if(audit&&isWrite)try{await audit.uncertain(session.context.instanceId,p.request.requestId);}catch{auditFailure=true;}throw e;}
   });
@@ -117,14 +176,19 @@ export async function createBridge(token: string, logging = false, audit?:AuditS
     if (!valid(p.token)) return reply.code(401).send({ code: 'UNAUTHORIZED' });
     let id = '';
     const queue: Request[] = [];
-    id = sessions.connect(p.context, 'http', r => queue.push(r), () => polls.delete(id));
+    id = sessions.connect(p.context, 'http', r => queue.push(r), () => { polls.delete(id); chat?.disconnect(id); });
     polls.set(id, queue);
-    return welcome(id);
+    return welcome(id, 'http');
   });
   app.get<{ Params: { id: string } }>('/v1/poll/:id', async req => {
     if (!sessions.has(req.params.id, 'http')) throw new Error('OFFLINE');
     sessions.heartbeat(req.params.id);
-    return { requests: polls.get(req.params.id)!.splice(0) };
+    const queue = polls.get(req.params.id)!;
+    while (queue.length) {
+      const request = queue.shift()!;
+      if (!sessions.discardExpiredUnpolled(req.params.id, request.requestId)) return { requests: [request] };
+    }
+    return { requests: [] };
   });
   app.post<{ Params: { id: string } }>('/v1/message/:id', async req => {
     if (!sessions.has(req.params.id, 'http')) throw new Error('OFFLINE');
@@ -161,8 +225,8 @@ export async function createBridge(token: string, logging = false, audit?:AuditS
         const p = ClientMessage.parse(JSON.parse(raw.toString()));
         if (!id) {
           if (p.type !== 'hello' || !valid(p.token)) { socket.close(1008, 'Unauthorized'); return; }
-          id = sessions.connect(p.context, 'ws', r => socket.send(JSON.stringify(r)), () => socket.close(1000, 'Session ended'));
-          clearTimeout(authTimer); socket.send(JSON.stringify(welcome(id))); return;
+          id = sessions.connect(p.context, 'ws', r => socket.send(JSON.stringify(r)), () => { if (id) chat?.disconnect(id); socket.close(1000, 'Session ended'); });
+          clearTimeout(authTimer); socket.send(JSON.stringify(welcome(id, 'ws'))); return;
         }
         if (p.type === 'hello' || !sessions.has(id, 'ws')) throw new Error('INVALID_REQUEST');
         sessions.heartbeat(id, p.type === 'heartbeat' ? Heartbeat.parse(p).context : undefined);
@@ -175,6 +239,6 @@ export async function createBridge(token: string, logging = false, audit?:AuditS
     socket.on('error', () => {clearInterval(transportTimer); if (id) sessions.disconnect(id); });
   });
   const timer = setInterval(() => sessions.expire(), 1000);
-  app.addHook('preClose', async () => { clearInterval(timer); sessions.close();await audit?.flush(); });
+  app.addHook('preClose', async () => { clearInterval(timer); sessions.close(); await chat?.close(); await audit?.flush(); });
   return app;
 }

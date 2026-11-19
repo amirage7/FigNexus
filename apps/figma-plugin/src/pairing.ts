@@ -22,9 +22,19 @@ export class PairingSession{
   start(){if(this.started)return;this.started=true;this.send('load');}
   contextReady(){this.ready=true;this.autoConnect();}
   private autoConnect(){
-    if(!this.ready||!this.autoPair)return;const pair=this.autoPair;this.autoPair=undefined;this.autoStarted=true;const generation=this.generation;
-    this.connectionIntent=pair;
-    void this.connection.connect(pair.token,pair.mode).catch(()=>{if(this.generation===generation){this.view.notice='自动连接失败，请检查 Bridge 或重新配对。';this.emit();}});
+    if(!this.ready||!this.autoPair)return;
+    const {token}=this.autoPair;
+    this.autoPair=undefined;this.autoStarted=true;
+    const generation=this.generation;
+    void (async()=>{
+      for(const mode of ['ws','http'] as const){
+        if(this.generation!==generation)return;
+        this.connectionIntent={token,mode};
+        this.view.mode=mode;
+        try{await this.connection.connect(token,mode);return;}catch{/* Try the next transport. */}
+      }
+      if(this.generation===generation){this.view.notice='自动连接失败，请检查 Bridge 或重新配对。';this.emit();}
+    })();
   }
   receive(message:PairingState){
     const load=this.pendingLoad,storage=this.storageRequests.get(message.requestId);

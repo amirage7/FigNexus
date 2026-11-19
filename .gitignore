@@ -9,6 +9,7 @@ dist/
 !/docs/windows-install.md
 !/docs/architecture.md
 !/docs/verification.md
+!/docs/editing-capabilities.md
 !/docs/images/
 !/docs/clients/
 .env

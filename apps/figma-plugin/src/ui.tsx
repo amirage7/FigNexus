@@ -6,8 +6,12 @@ import { PluginConnection } from './connection';
 import {PairingSession,type PairingView} from './pairing';
 import {QuickPairingClient,type QuickPairView} from './quick-pairing-client';
 import {PanelView} from './panel-view';
+import { CanvasPanel } from './canvas-panel';
+import { useCanvasPanel } from './canvas-panel-state';
+import { CodexChatPanel } from './codex-chat-panel';
 import './ui.css';
 function App() {
+  const {receive:receiveCanvasMessage,...canvasPanel}=useCanvasPanel();
   const [compact,setCompact]=useState(false),[panelNotice,setPanelNotice]=useState('');
   const setPanel=(compact:boolean)=>parent.postMessage({pluginMessage:{type:'panel-mode',compact}},'*');
   const [pairingView,setPairingView]=useState<PairingView>({token:'',mode:'ws',remember:true,saved:false,notice:''});
@@ -31,6 +35,7 @@ function App() {
     const listener = (event: MessageEvent) => {
       // Desktop Figma relays messages through its host window, not always the immediate parent.
       if (event.source !== parent && event.origin !== 'https://www.figma.com') return;
+      if(receiveCanvasMessage(event.data?.pluginMessage)) return;
       const result = MainMessage.safeParse(event.data?.pluginMessage);
       if (!result.success) return;
       if (result.data.type === 'context') { context.current = result.data.context; setFile(result.data.context);paired.contextReady(); }
@@ -39,19 +44,31 @@ function App() {
       else if(result.data.type==='progress'){void c.progress(result.data);}
       else { const message=result.data;setDeleteState(state=>reduceDeleteState(state,message));if(message.type==='result')void c.send(message); }
     };
+    const resume = () => { if (document.visibilityState === 'visible') c.resume(); };
     window.addEventListener('message', listener);
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', resume);
     sendMain({ type: 'context-request' });
     sendMain({type:'panel-load'});
+    sendMain({type:'canvas-selection-request'});
     paired.start();
     const timer = setInterval(() => sendMain({ type: 'context-request' }), 3000);
-    return () => { q.cancel();clearInterval(timer); window.removeEventListener('message', listener); void paired.disconnect(); };
-  }, []);
+    return () => {
+      q.cancel();clearInterval(timer);
+      window.removeEventListener('message', listener);
+      window.removeEventListener('focus', resume);
+      document.removeEventListener('visibilitychange', resume);
+      void paired.disconnect();
+    };
+  }, [receiveCanvasMessage]);
   const online=status.startsWith('在线');
   const pair=()=>{void(async()=>{await pairing.current?.disconnect();await quick.current?.start();})().catch(()=>setStatus('连接未能建立，请重试'));};
   const reconnect=()=>{quick.current?.cancel();void pairing.current?.connect().catch(()=>setStatus('连接未能建立，请检查本机服务后重试'));};
-  const notices=[panelNotice,deleteState.notice,...(!online?[quickView.notice]:[]),...(/失败|未能|无法/.test(pairingView.notice)?[pairingView.notice]:[])].filter(Boolean);
-  return <PanelView compact={compact} status={status} file={file} hasPair={token.length>=32} savedPair={pairingView.saved} remember={pairingView.remember} waiting={quickView.waiting} code={quickView.code} notices={notices} deletion={deleteState} actions={{
-    toggle:setPanel,edit:enabled=>parent.postMessage({pluginMessage:{type:'set-write',enabled}},'*'),pair,reconnect,cancel:()=>quick.current?.cancel(),remember:enabled=>pairing.current?.setRemember(enabled),repair:pair,
+  const notices=[panelNotice,deleteState.notice,!online&&quickView.notice,/失败|未能/.test(status)&&status,/失败|未能|无法/.test(pairingView.notice)&&pairingView.notice].filter((notice):notice is string=>Boolean(notice));
+  return <PanelView compact={compact} status={status} file={file} hasPair={token.length>=32} savedPair={pairingView.saved} remember={pairingView.remember} waiting={quickView.waiting} code={quickView.code} notices={notices} deletion={deleteState}
+    chat={online && client.current && <CodexChatPanel key={client.current.sessionId} connection={client.current} persistent={Boolean(file?.fileKey)} />}
+    canvas={<CanvasPanel {...canvasPanel}/>} actions={{
+    toggle:setPanel,pair,reconnect,cancel:()=>quick.current?.cancel(),remember:enabled=>pairing.current?.setRemember(enabled),repair:pair,
     fallback:()=>{quick.current?.cancel();pairing.current?.setMode('http');reconnect();},forget:()=>{quick.current?.cancel();void pairing.current?.forget().catch(()=>setStatus('清除配对失败，请重试'));},
     confirm:approved=>{if(confirmation)parent.postMessage({pluginMessage:{type:'confirm-delete',requestId:confirmation.requestId,confirmationId:confirmation.confirmationId,approved}},'*');}
   }}/>;

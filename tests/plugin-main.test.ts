@@ -4,7 +4,7 @@ import {reduceDeleteState} from '../apps/figma-plugin/src/confirmation-ui';
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.resetModules(); });
 it('retains restore write IDs after result cache eviction and refuses a second clone',async()=>{
   const f=fixture(),sent:any[]=[];f.api.showUI=vi.fn();f.api.on=vi.fn();f.api.ui={postMessage:(m:any)=>sent.push(m)};
-  vi.stubGlobal('figma',f.api);vi.stubGlobal('__html__','test');await import('../apps/figma-plugin/src/main');f.api.ui.onmessage({type:'set-write',enabled:true});
+  vi.stubGlobal('figma',f.api);vi.stubGlobal('__html__','test');await import('../apps/figma-plugin/src/main');
   const node=f.make('RECTANGLE');f.api.ui.onmessage({type:'request',requestId:'backup-create',method:'execute',params:{operations:[{op:'update',target:node.id,patch:{width:40}}]}});await new Promise(r=>setTimeout(r,0));
   const backupId=sent.at(-1).data.backups[0].backupId;
   const request={type:'request',requestId:'restore-id',method:'restore_backup',params:{backupId,parentId:'p'}};
@@ -17,7 +17,6 @@ async function deletionFixture(multi=false) {
   const f=fixture(),node=f.make('RECTANGLE'),other=multi?f.make('RECTANGLE'):undefined,sent:any[]=[];
   f.api.showUI=vi.fn();f.api.on=vi.fn();f.api.ui={postMessage:(m:unknown)=>sent.push(m)};
   vi.stubGlobal('figma',f.api);vi.stubGlobal('__html__','test');await import('../apps/figma-plugin/src/main');
-  f.api.ui.onmessage({type:'set-write',enabled:true});
   const request={type:'request',requestId:'local-delete',method:'execute',params:{operations:[{op:'delete',target:node.id},...(other?[{op:'delete',target:other.id}]:[])]}};
   f.api.ui.onmessage(request);await new Promise(r=>setTimeout(r,0));
   const grant=sent.find(m=>m.type==='confirmation');
@@ -34,21 +33,14 @@ it('executes on local confirmation and returns the same cached result after expi
   f.api.ui.onmessage(f.request);await new Promise(r=>setTimeout(r,0));
   expect(f.sent.at(-1)).toEqual(result);expect(f.api.commitUndo).toHaveBeenCalledTimes(1);
 });
-it.each(['expired','revoked','page','stale','cancelled'])('acknowledges %s confirmation without deleting',async(reason:string)=>{
+it.each(['expired','page','stale','cancelled'])('acknowledges %s confirmation without deleting',async(reason:string)=>{
   const f=await deletionFixture();
   if(reason==='expired')vi.spyOn(Date,'now').mockReturnValue(Date.now()+300001);
-  if(reason==='revoked')f.api.ui.onmessage({type:'set-write',enabled:false});
   if(reason==='page')f.api.currentPage={...f.page,id:'different-page'};
   f.confirm(reason!=='cancelled',reason==='stale'?'stale-id':f.grant.confirmationId);
   await new Promise(r=>setTimeout(r,0));
   expect(f.node.removed).toBe(false);expect(f.api.commitUndo).not.toHaveBeenCalled();
   expect(f.sent.at(-1)).toMatchObject({type:'confirmation_state',state:reason==='cancelled'?'cancelled':'invalid'});
-});
-it('rechecks write permission before executing a locally confirmed queued request',async()=>{
-  const f=await deletionFixture();f.confirm();f.api.ui.onmessage({type:'set-write',enabled:false});
-  await new Promise(r=>setTimeout(r,0));
-  expect(f.node.removed).toBe(false);expect(f.api.commitUndo).not.toHaveBeenCalled();
-  expect(f.sent.at(-1)).toMatchObject({type:'confirmation_state',state:'invalid'});
 });
 it.each(['page','expiry'])('rechecks %s before the locally confirmed queue runs',async(reason:string)=>{
   const f=await deletionFixture();f.confirm();
@@ -75,11 +67,11 @@ it('does not report cancellation after an accepted execution has started',async(
   release();await new Promise(r=>setTimeout(r,0));
   expect(f.node.removed).toBe(true);expect(f.sent.at(-1).ok).toBe(true);
 });
-it('preserves partial execution status when revoked permission rejects a later click',async()=>{
+it('preserves partial execution status when a page change interrupts the batch',async()=>{
   const f=await deletionFixture(true);const original=f.api.getNodeByIdAsync;let release!:()=>void;
   f.api.getNodeByIdAsync=async(id:string)=>{if(id===f.other!.id)await new Promise<void>(resolve=>{release=resolve;});return original(id);};
   f.confirm();await new Promise(r=>setTimeout(r,0));expect(f.node.removed).toBe(true);
-  f.api.ui.onmessage({type:'set-write',enabled:false});f.confirm(false);
+  f.api.currentPage={...f.page,id:'changed-page'};f.confirm(false);
   expect(f.sent.at(-1)).toMatchObject({type:'confirmation_state',state:'accepted'});
   release();await new Promise(r=>setTimeout(r,0));
   expect(f.other!.removed).toBe(false);expect(f.sent.at(-1).data.complete).toBe(false);expect(f.sent.at(-1).data.backups).toHaveLength(1);
@@ -90,7 +82,7 @@ it('tracks an approved retry queued ahead of the local confirmation callback',as
   const f=await deletionFixture(true);const original=f.api.getNodeByIdAsync;let release!:()=>void;
   f.api.getNodeByIdAsync=async(id:string)=>{if(id===f.other!.id)await new Promise<void>(resolve=>{release=resolve;});return original(id);};
   f.api.ui.onmessage(f.request);f.confirm();await new Promise(r=>setTimeout(r,0));
-  expect(f.node.removed).toBe(true);f.api.ui.onmessage({type:'set-write',enabled:false});f.confirm(false);
+  expect(f.node.removed).toBe(true);f.api.currentPage={...f.page,id:'changed-page'};f.confirm(false);
   expect(f.sent.at(-1)).toMatchObject({type:'confirmation_state',state:'accepted'});
   release();await new Promise(r=>setTimeout(r,0));
   const state=f.sent.filter(m=>['confirmation','confirmation_state','result'].includes(m.type)).reduce(reduceDeleteState,{notice:''});
@@ -114,7 +106,6 @@ it('rejects a stale confirmation after expiration and request ID reuse',async()=
   f.api.showUI=vi.fn();f.api.on=vi.fn();f.api.ui={postMessage:(m:unknown)=>sent.push(m)};
   let now=1000;vi.spyOn(Date,'now').mockImplementation(()=>now);
   vi.stubGlobal('figma',f.api);vi.stubGlobal('__html__','test');await import('../apps/figma-plugin/src/main');
-  f.api.ui.onmessage({type:'set-write',enabled:true});
   const p={type:'request',requestId:'reused-delete',method:'execute',params:{operations:[{op:'delete',target:first.id}]}};
   const settle=()=>new Promise(r=>setTimeout(r,0));
   f.api.ui.onmessage(p);await settle();const old=sent.filter(m=>m.type==='confirmation').at(-1);
@@ -144,7 +135,6 @@ it('requires local confirmation bound to the exact delete payload',async()=>{
   const f=fixture(),first=f.make('TEXT'),other=f.make('TEXT'),sent:any[]=[];
   f.api.showUI=vi.fn();f.api.on=vi.fn();f.api.ui={postMessage:(m:unknown)=>sent.push(m)};
   vi.stubGlobal('figma',f.api);vi.stubGlobal('__html__','test');await import('../apps/figma-plugin/src/main');
-  f.api.ui.onmessage({type:'set-write',enabled:true});
   const p={type:'request',requestId:'delete-batch',method:'execute',params:{operations:[{op:'delete',target:first.id}]}};
   const settle=()=>new Promise(r=>setTimeout(r,0));
   f.api.ui.onmessage(p);await settle();expect(sent.at(-1).error.code).toBe('CONFIRMATION_REQUIRED');expect(first.removed).toBe(false);

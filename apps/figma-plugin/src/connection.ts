@@ -16,6 +16,30 @@ export class PluginConnection {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }
+  async chat(method: 'snapshot' | 'send' | 'stop', message?: { requestId: string; text?: string }) {
+    const sessionId = this.sessionId;
+    if (!sessionId) throw Error('请先连接本机。');
+    const gen = this.generation;
+    const path = method === 'snapshot' ? '/v1/chat/' + sessionId : '/v1/chat/' + method;
+    const body = method === 'snapshot' ? undefined : {
+      sessionId, ...message, ...(method === 'send' ? { pageId: this.context().page.id } : {}),
+    };
+    const response = await fetch(this.url + path, {
+      method: body ? 'POST' : 'GET',
+      headers: { Authorization: `Bearer ${this.token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(4000),
+    });
+    if (gen !== this.generation) throw Error('连接已切换，请重试。');
+    if (response.status === 404) throw Error('请更新并重启本机 Bridge。');
+    const data = await response.json();
+    if (!response.ok) {
+      if (data.code === 'CHAT_BUSY') throw Error('有对话正在运行，请稍后重试。');
+      if (data.code === 'PAGE_CHANGED') throw Error('页面刚切换，请稍后重试。');
+      throw Error('本机对话请求失败，请检查连接后重试。');
+    }
+    return data;
+  }
   async connect(token: string, mode: 'ws' | 'http') {
     const intent = ++this.intent;
     await this.stop();
@@ -45,19 +69,25 @@ export class PluginConnection {
       await new Promise<void>((resolve, reject) => {
         const ws = new WebSocket(this.url.replace('http:', 'ws:') + '/v1/ws');
         this.socket = ws;
+        let accepted = false;
         const timeout = setTimeout(() => { ws.close(); reject(new Error('WebSocket 连接超时')); }, 4000);
         ws.onopen = () => { if (gen === this.generation) ws.send(JSON.stringify(hello)); else ws.close(); };
         ws.onmessage = event => {
           if (gen !== this.generation) return;
           try {
             const message = ServerMessage.parse(JSON.parse(String(event.data)));
-            if (message.type === 'welcome') { this.sessionId = message.sessionId; clearTimeout(timeout); resolve(); }
+            if (message.type === 'welcome') { accepted = true; this.sessionId = message.sessionId; clearTimeout(timeout); resolve(); }
             else if (message.type === 'request') this.request(message);
             else if (message.type === 'error') throw new Error(message.code);
           } catch { ws.close(1008, 'Invalid message'); }
         };
-        ws.onerror = () => { clearTimeout(timeout); reject(new Error('WebSocket 失败：检查 Bridge、网络权限，或选择 HTTP 轮询')); };
-        ws.onclose = () => { clearTimeout(timeout); reject(new Error('WebSocket 已断开')); this.lost(gen); };
+        const closed = () => {
+          clearTimeout(timeout);
+          if (accepted) this.lost(gen);
+          else reject(new Error('WebSocket 未能连接本机 Bridge。'));
+        };
+        ws.onerror = closed;
+        ws.onclose = closed;
       });
     }
     if (gen !== this.generation || !this.wanted) return;
@@ -90,7 +120,17 @@ export class PluginConnection {
     clearInterval(this.timer); this.socket?.close(); this.socket = undefined;
     this.state('离线 · 2 秒后重连（可点击断开停止）');
     clearTimeout(this.retry);
-    if (this.wanted) this.retry = setTimeout(() => { void this.attempt().catch(() => {}); }, 2000);
+    this.retry = this.wanted ? setTimeout(() => this.retryNow(), 2000) : undefined;
+  }
+  private retryNow() {
+    if (!this.wanted || this.retry === undefined) return;
+    clearTimeout(this.retry);
+    this.retry = undefined;
+    void this.attempt().catch(() => {});
+  }
+  resume() {
+    if (this.sessionId) void this.tick(this.generation);
+    else this.retryNow();
   }
   async send(result: Result) {
     const p = Result.parse(result);
@@ -112,6 +152,8 @@ export class PluginConnection {
   }
   private async stop() {
     this.wanted = false; ++this.generation; clearInterval(this.timer); clearTimeout(this.retry);
+    this.retry = undefined;
+    this.busy = false;
     const gen = this.generation;
     const id = this.sessionId; this.sessionId = undefined;
     this.socket?.close(); this.socket = undefined;

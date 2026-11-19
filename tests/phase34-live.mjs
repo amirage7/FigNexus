@@ -32,7 +32,7 @@ try{
   }
   await preview('before');
   if(!process.argv.includes('--preview-only')){
-    assert(matches[0].context.writeEnabled,'Enable local edit permission');
+    assert(matches[0].context.writeEnabled,'Use the current FigNexus plugin build with editing enabled by default');
     const requestId=`phase34-${randomUUID()}`;
     const operations=[
       {op:'update',target:refs.title,patch:{characters:'AI Bridge · Updated',fontSize:24}},

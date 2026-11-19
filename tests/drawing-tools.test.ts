@@ -33,6 +33,39 @@ async function setup(writeEnabled = true, pageId = 'p') {
   return {f,client,call,dispatched,hooks};
 }
 describe('drawing tools independent of figma_execute discovery', () => {
+  it('publishes shallow independent editing tools and edits a cloned descendant through MCP',async()=>{
+    const {client,call,f}=await setup();const tools=(await client.listTools()).tools;
+    for(const name of ['figma_clone_node','figma_update_text','figma_update_node','figma_delete_nodes','figma_edit_nodes']){
+      const tool=tools.find(t=>t.name===name);expect(tool,name).toBeDefined();expect(JSON.stringify(tool!.inputSchema).length).toBeLessThan(6500);
+    }
+    const source=f.make('FRAME'),text=f.make('TEXT');source.appendChild(text);text.characters='source';
+    const clone=await call('figma_clone_node',{requestId:'clone',target:source.id,name:'Copy',x:1200});
+    const id=clone.body.data.results[0].idMap[text.id];
+    const updated=await call('figma_update_text',{requestId:'text',target:id,characters:'changed'});
+    expect(updated.body.data.complete).toBe(true);expect(text.characters).toBe('source');expect(f.nodes.get(id).characters).toBe('changed');
+    const props=await call('figma_update_node',{requestId:'props',target:id,name:'Renamed',visible:false,locked:true});
+    expect(props.body.data.results[0].node).toMatchObject({name:'Renamed',visible:false,locked:true});
+  });
+  it('validates edit batches and delete targets before dispatch and respects local deletion approval',async()=>{
+    const {call,dispatched,f}=await setup();const n=f.make('TEXT');
+    const bad=await call('figma_edit_nodes',{requestId:'bad',operationsJson:'[{"op":"eval","code":"x"}]'});
+    expect(bad.result.isError).toBe(true);expect(dispatched).toEqual([]);
+    const deleted=await call('figma_delete_nodes',{requestId:'delete',targets:[n.id]});
+    expect(deleted.result.isError).toBe(true);expect(n.removed).toBe(false);
+    expect(dispatched[0]).toMatchObject({requestId:'delete',params:{operations:[{op:'delete',target:n.id}]}});
+  });
+  it('forwards cached-result retrieval even when current status shows writes disabled on a different page',async()=>{
+    const {call}=await setup();const previousFetch=globalThis.fetch;
+    const cached={type:'result',requestId:'finished',ok:true,data:{context:{instanceId:'old',document:{id:'0',name:'Test'},page:{id:'p',name:'Page'},writeEnabled:true},complete:true,status:'complete',created:[],refs:{},completed:[0],backups:[],skipped:[]}};
+    const sent:any[]=[];
+    vi.stubGlobal('fetch',vi.fn(async(url:string,init?:RequestInit)=>{
+      if(url.endsWith('/v1/request')){sent.push(JSON.parse(String(init?.body)));return Response.json(cached);}
+      if(url.endsWith('/v1/status'))return Response.json({version:1,online:true,permissions:['read'],sessions:[{sessionId:'session',transport:'ws',lastSeen:Date.now(),context:{...cached.data.context,page:{id:'different',name:'Other'},writeEnabled:false}}]});
+      return previousFetch(url,init);
+    }));
+    const r=await call('figma_delete_nodes',{requestId:'finished',targets:['deleted']});
+    expect(r.body).toEqual(cached);expect(sent).toHaveLength(1);
+  });
   it('publishes small creation schemas and non-destructive annotations', async () => {
     const {client} = await setup(); const {tools} = await client.listTools();
     for (const name of ['figma_create_frame','figma_create_text','figma_create_rectangle','figma_create_nodes']) {

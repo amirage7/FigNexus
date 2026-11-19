@@ -19,11 +19,11 @@ export const Creation = z.object({ vectorPaths:VectorPathsInputSchema.optional()
   if (v.type !== 'TEXT' && (v.characters !== undefined || v.font || v.fontSize !== undefined)) ctx.addIssue({ code: 'custom', message: 'Text attributes require TEXT' });
   if (!['FRAME','RECTANGLE'].includes(v.type) && v.cornerRadius !== undefined) ctx.addIssue({ code: 'custom', message: 'Corner radius requires FRAME or RECTANGLE' });
 });
-export const Patch = z.object({ vectorPaths:VectorPathsInputSchema.optional(),strokeCap:StrokeCapSchema.optional(),strokeJoin:StrokeJoinSchema.optional(),rotation:z.number().finite().min(-360).max(360).optional(), name: z.string().max(512).optional(), x: z.number().finite().min(-100000).max(100000).optional(), y: z.number().finite().min(-100000).max(100000).optional(), width: z.number().min(.01).max(10000).optional(), height: z.number().min(0).max(10000).optional(), characters: z.string().max(2048).optional(), font: z.object({ family: z.string().min(1).max(128), style: z.string().min(1).max(128) }).strict().optional(), fontSize: z.number().min(1).max(512).optional(), fill: Color.optional(), fills: FillsSchema.optional(), effects: EffectsSchema.optional(), stroke: Color.optional(), strokeWeight: z.number().min(0).max(100).optional(), cornerRadius: z.number().min(0).max(5000).optional(), opacity: z.number().min(0).max(1).optional(), visible: z.boolean().optional() }).strict().superRefine((v,c)=>{if(v.fill&&v.fills!==undefined)c.addIssue({code:'custom',message:'Use fill or fills, not both'});});
+export const Patch = z.object({ locked:z.boolean().optional(), vectorPaths:VectorPathsInputSchema.optional(),strokeCap:StrokeCapSchema.optional(),strokeJoin:StrokeJoinSchema.optional(),rotation:z.number().finite().min(-360).max(360).optional(), name: z.string().max(512).optional(), x: z.number().finite().min(-100000).max(100000).optional(), y: z.number().finite().min(-100000).max(100000).optional(), width: z.number().min(.01).max(10000).optional(), height: z.number().min(0).max(10000).optional(), characters: z.string().max(2048).optional(), font: z.object({ family: z.string().min(1).max(128), style: z.string().min(1).max(128) }).strict().optional(), fontSize: z.number().min(1).max(512).optional(), fill: Color.optional(), fills: FillsSchema.optional(), effects: EffectsSchema.optional(), stroke: Color.optional(), strokeWeight: z.number().min(0).max(100).optional(), cornerRadius: z.number().min(0).max(5000).optional(), opacity: z.number().min(0).max(1).optional(), visible: z.boolean().optional() }).strict().superRefine((v,c)=>{if(v.fill&&v.fills!==undefined)c.addIssue({code:'custom',message:'Use fill or fills, not both'});});
 export const Layout = z.object({ direction: z.enum(['NONE','HORIZONTAL','VERTICAL']), gap: z.number().min(0).max(1000).optional(), padding: z.number().min(0).max(1000).optional(), paddingTop: z.number().min(0).max(1000).optional(), paddingBottom: z.number().min(0).max(1000).optional(), paddingLeft: z.number().min(0).max(1000).optional(), paddingRight: z.number().min(0).max(1000).optional(), primaryAlign: z.enum(['MIN','CENTER','MAX','SPACE_BETWEEN']).optional(), counterAlign: z.enum(['MIN','CENTER','MAX']).optional(), primarySizing: z.enum(['FIXED','AUTO']).optional(), counterSizing: z.enum(['FIXED','AUTO']).optional() }).strict();
 export const Operation = z.union([Creation,
   z.object({ op: z.literal('update'), target: id, patch: Patch }).strict(),
-  z.object({ op: z.literal('clone'), target: id, ref: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/).optional(), parent: id.optional() }).strict(),
+  z.object({ op: z.literal('clone'), target: id, name:z.string().max(512).optional(), x:z.number().finite().min(-100000).max(100000).optional(), y:z.number().finite().min(-100000).max(100000).optional(), ref: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/).optional(), parent: id.optional() }).strict(),
   z.object({ op: z.literal('reparent'), target: id, parent: id, index: z.number().int().min(0).max(10000).optional() }).strict(),
   z.object({ op: z.literal('reorder'), target: id, index: z.number().int().min(0).max(10000) }).strict(),
   z.object({ op: z.literal('delete'), target: id }).strict(),
@@ -36,23 +36,37 @@ export const BackupMetadata = z.object({version:z.literal(1),backupId:id,nodeId:
 export const BackupListResult = z.object({context:FileContext,backups:z.array(BackupMetadata).max(50),nextCursor:z.number().int().nullable(),truncated:z.boolean(),scanned:z.number().int()}).strict();
 export const PreviewInput = z.object({ nodeId: id, maxSize: z.number().int().min(256).max(2048).default(1024) }).strict();
 export const ChunkInput = z.object({ exportId: id, index: z.number().int().min(0).max(58) }).strict();
+const RequestEnvelope = { type: z.literal('request'), requestId: id, chatPageId: id.optional() };
 export const Request = z.discriminatedUnion('method', [
-  z.object({ type: z.literal('request'), requestId: id, method: z.literal('ping') }).strict(),
-  ...(['get_document','get_selection','get_nodes','find_nodes'] as const).map(method => z.object({ type: z.literal('request'), requestId: id, method: z.literal(method), params: ReadInput }).strict()),
-  z.object({ type: z.literal('request'), requestId: id, method: z.literal('execute'), params: ExecuteInput }).strict()
-  ,z.object({type:z.literal('request'),requestId:id,method:z.literal('list_backups'),params:ListBackupsInput}).strict()
-  ,z.object({type:z.literal('request'),requestId:id,method:z.literal('restore_backup'),params:RestoreInput}).strict()
-  ,z.object({ type: z.literal('request'), requestId: id, method: z.literal('export_preview'), params: PreviewInput }).strict()
-  ,z.object({ type: z.literal('request'), requestId: id, method: z.literal('preview_chunk'), params: ChunkInput }).strict()
-,z.object({type:z.literal('request'),requestId:id,method:z.literal('design'),params:DesignParams}).strict()
-  ,z.object({type:z.literal('request'),requestId:id,method:z.literal('image_upload'),params:ImageUploadInput}).strict()
+  z.object({ ...RequestEnvelope, method: z.literal('ping') }).strict(),
+  ...(['get_document','get_selection','get_nodes','find_nodes'] as const).map(method => z.object({ ...RequestEnvelope, method: z.literal(method), params: ReadInput }).strict()),
+  z.object({ ...RequestEnvelope, method: z.literal('execute'), params: ExecuteInput }).strict()
+  ,z.object({ ...RequestEnvelope,method:z.literal('list_backups'),params:ListBackupsInput}).strict()
+  ,z.object({ ...RequestEnvelope,method:z.literal('restore_backup'),params:RestoreInput}).strict()
+  ,z.object({ ...RequestEnvelope, method: z.literal('export_preview'), params: PreviewInput }).strict()
+  ,z.object({ ...RequestEnvelope, method: z.literal('preview_chunk'), params: ChunkInput }).strict()
+  ,z.object({ ...RequestEnvelope,method:z.literal('design'),params:DesignParams}).strict()
+  ,z.object({ ...RequestEnvelope,method:z.literal('image_upload'),params:ImageUploadInput}).strict()
 ]);
 export type Request = z.infer<typeof Request>;
 export function isWriteRequest(request:Request){return request.method==='execute'||request.method==='restore_backup'||request.method==='image_upload'||request.method==='design'&&isDesignWrite(request.params);}
 export const Poll = z.object({ requests: z.array(Request).max(1) }).strict();
 export const NodeSummary = z.object({ fieldsTruncated:z.array(Fields).max(12).optional(), id, type: z.string().max(64), vectorPaths:NativeVectorPathsSchema.optional(),vectorPathsTruncated:z.boolean().optional(),strokes:z.array(z.union([Color,PaintSchema])).max(4).optional(),strokeWeight:z.number().finite().optional(),strokeCap:z.union([StrokeCapSchema,z.literal('MIXED')]).optional(),strokeJoin:z.union([StrokeJoinSchema,z.literal('MIXED')]).optional(),rotation:z.number().finite().optional(),name: z.string().max(512).optional(), parentId: id.optional(), x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(), characters: z.string().max(512).optional(), fills: z.array(z.union([Color,PaintSchema])).max(4).optional(), effects:EffectsSchema.optional(), boundVariables:BoundVariablesSchema.optional(),bindingsTruncated:z.boolean().optional(), componentId:id.optional(), mainComponentId:id.optional(), childCount: z.number().int().optional(), locked: z.boolean().optional(), layoutMode: z.string().optional() }).strict();
 export const ReadResult = z.object({ context: FileContext, nodes: z.array(NodeSummary).max(50), nextCursor: z.number().int().nullable(), truncated: z.boolean(), scanned: z.number().int(), missing: z.array(id).max(50).optional(), pages: z.array(identity).max(50).optional(), pagesTruncated: z.boolean().optional() }).strict();
-export const ExecuteResult = z.object({ context: FileContext, complete: z.boolean(), created: z.array(z.object({ index: z.number().int(), id, type: z.string(), ref: z.string().optional() }).strict()).max(25), refs: z.record(id), completed: z.array(z.number().int()).max(25).optional(), backups: z.array(z.object({ nodeId: id, backupId: id, parentId: id, index: z.number().int() }).strict()).max(25).optional(), failed: z.object({ index: z.number().int(), code: z.string().max(64), message: z.string().max(512) }).strict().optional(), skipped: z.array(z.number().int()).max(25) }).strict();
+export const EditedNode = z.object({ fieldsTruncated:z.array(z.string()).optional(),
+ id, type:z.string(), name:z.string(), parentId:id.optional(), coordinateSpace:z.literal('parent'),
+ x:z.number().optional(),y:z.number().optional(),width:z.number().optional(),height:z.number().optional(),
+ characters:z.string().optional(),charactersTruncated:z.boolean().optional(),opacity:z.number().optional(),visible:z.boolean().optional(),locked:z.boolean().optional(),
+ fills:z.array(PaintSchema).max(4).optional(),fillsTruncated:z.boolean().optional(),textAutoResize:z.string().optional(),
+ effects:EffectsSchema.optional(),strokes:z.array(PaintSchema).max(4).optional(),strokeWeight:z.number().optional(),strokeCap:z.union([StrokeCapSchema,z.literal('MIXED')]).optional(),strokeJoin:z.union([StrokeJoinSchema,z.literal('MIXED')]).optional(),rotation:z.number().optional(),cornerRadius:z.union([z.number(),z.literal('MIXED')]).optional(),vectorPaths:NativeVectorPathsSchema.optional(),layout:z.record(z.union([z.string(),z.number()])).optional(),
+ fontSize:z.number().optional(),font:z.object({family:z.string(),style:z.string()}).optional(),
+ textAlignHorizontal:z.string().optional(),textAlignVertical:z.string().optional()
+}).strict();
+export const EditItemResult=z.object({index:z.number().int(),op:z.string(),status:z.enum(['completed','failed','skipped']),
+ node:EditedNode.optional(),deletedId:id.optional(),idMap:z.record(id).optional(),mutated:z.boolean().optional(),
+ error:z.object({code:z.string(),message:z.string()}).optional(),residualIds:z.array(id).optional()
+}).strict();
+export const ExecuteResult = z.object({ status:z.enum(['none','partial','complete']).optional(),results:z.array(EditItemResult).max(25).optional(), context: FileContext, complete: z.boolean(), created: z.array(z.object({ index: z.number().int(), id, type: z.string(), ref: z.string().optional() }).strict()).max(25), refs: z.record(id), completed: z.array(z.number().int()).max(25).optional(), backups: z.array(z.object({ nodeId: id, backupId: id, parentId: id, index: z.number().int() }).strict()).max(25).optional(), failed: z.object({ index: z.number().int(), code: z.string().max(64), message: z.string().max(512) }).strict().optional(), skipped: z.array(z.number().int()).max(25) }).strict();
 export const DesignResult=ExecuteResult.extend({design:DesignOutput});
 export const ImageUploadResult=ExecuteResult.extend({image:ImageUploadState});
 export const PreviewMeta = z.object({ exportId: id, nodeId: id, totalBytes: z.number().int().min(1).max(2097152), chunks: z.number().int().min(1).max(59) }).strict();
@@ -79,7 +93,7 @@ export const PairingState=z.object({type:z.literal('pairing-state'),requestId:id
 export type PairingState=z.infer<typeof PairingState>;
 export const PanelCommand=z.union([z.object({type:z.literal('panel-load')}).strict(),z.object({type:z.literal('panel-mode'),compact:z.boolean()}).strict()]);
 export const PanelState=z.object({type:z.literal('panel-state'),compact:z.boolean(),error:z.literal('STORAGE_UNAVAILABLE').optional()}).strict();
-export const UiMessage = z.union([PanelCommand,z.object({ type: z.literal('context-request') }).strict(), z.object({ type: z.literal('set-write'), enabled: z.boolean() }).strict(), z.object({ type: z.literal('confirm-delete'), requestId: id, confirmationId: id, approved: z.boolean() }).strict(), PairingCommand,Request]);
+export const UiMessage = z.union([PanelCommand,z.object({ type: z.literal('context-request') }).strict(), z.object({ type: z.literal('confirm-delete'), requestId: id, confirmationId: id, approved: z.boolean() }).strict(), PairingCommand,Request]);
 export const Confirmation = z.object({ type: z.literal('confirmation'), requestId: id, confirmationId: id, targets: z.array(id).max(25) }).strict();
 export const ConfirmationState = z.object({type:z.literal('confirmation_state'),requestId:id,confirmationId:id,state:z.enum(['accepted','cancelled','invalid'])}).strict();
 export const MainMessage = z.union([z.object({ type: z.literal('context'), context: FileContext }).strict(), Confirmation, ConfirmationState, Result,RequestProgress,PairingState,PanelState]);

@@ -1,6 +1,7 @@
 import { ExecuteInput, ReadInput, PreviewInput, ChunkInput, type FileContext, type Request, type Result, type NodeSummary,type RequestProgress } from '@bridge/protocol';
 import type { z } from 'zod';
 import { editBatch } from './editor';
+import {editSnapshot,editError,boundExecution} from './edit-results';
 import { PreviewManager } from './preview';
 import {listBackups,restoreBackup} from './backups';
 import {toNativePaints,toNativeEffects,serializePaints,serializeEffects} from './visual';
@@ -52,7 +53,7 @@ async function summary(node: BaseNode, fields: z.infer<typeof ReadInput>['fields
   return s;
 }
 
-export function createExecutor(api: Api, canWrite: () => boolean, getContext?: () => FileContext, deleteAllowed: () => boolean = () => false,progress:(stage:RequestProgress['stage'])=>void=()=>{}) {
+export function createExecutor(api: Api, canWrite: () => boolean, getContext?: () => FileContext, deleteAllowed: () => boolean = () => false,progress:(stage:RequestProgress['stage'])=>void=()=>{},deferUndo=false) {
   const context = () => getContext?.() ?? { instanceId: 'executor', document: { id: api.root.id, name: api.root.name }, page: { id: api.currentPage.id, name: api.currentPage.name }, writeEnabled: canWrite() };
   const previews = new PreviewManager(api,progress);
   const images=new NativeImageUploads(api as unknown as PluginAPI,canWrite,context);
@@ -72,7 +73,7 @@ export function createExecutor(api: Api, canWrite: () => boolean, getContext?: (
       if (!canWrite()) return fail('WRITE_DISABLED');
       const batch = ExecuteInput.parse(raw);
       if (batch.expectedPageId !== undefined && batch.expectedPageId !== page.id) return fail('PAGE_CHANGED');
-      if (batch.operations.some(op => op.op !== 'create')) return editBatch(api, batch, canWrite, context, async (b): Promise<z.infer<typeof import('@bridge/protocol').ExecuteResult>> => await createExecutor(api,canWrite,getContext)('execute',b) as z.infer<typeof import('@bridge/protocol').ExecuteResult>, deleteAllowed());
+      if (batch.operations.some(op => op.op !== 'create')) return editBatch(api, batch, canWrite, context, async (b): Promise<z.infer<typeof import('@bridge/protocol').ExecuteResult>> => await createExecutor(api,canWrite,getContext,undefined,progress,true)('execute',b) as z.infer<typeof import('@bridge/protocol').ExecuteResult>, deleteAllowed());
       const operations = batch.operations.filter(op => op.op === 'create');
       const deadline = Date.now() + 15000;
       const refs: Record<string, string> = Object.create(null);
@@ -98,13 +99,14 @@ export function createExecutor(api: Api, canWrite: () => boolean, getContext?: (
       };
       for (let i = 0; i < operations.length; i++) await visit(i);
       const created: { index: number; id: string; type: string; ref?: string }[] = [];
+      const nativeCreated=new Map<number,SceneNode>();let residual:SceneNode|undefined;
       let failed: { index: number; code: string; message: string } | undefined;
       for (const index of order) {
         const op = operations[index];
         let node: SceneNode | undefined;
         try {
           const font = op.font ?? { family: 'Inter', style: 'Regular' };
-          if (op.type === 'TEXT'){progress('font-loading');await api.loadFontAsync(font);progress('font-ready');}
+          if (op.type === 'TEXT'){progress('font-loading');try{await api.loadFontAsync(font);}catch{fail(`FONT_LOAD_FAILED: ${font.family} / ${font.style}`);}progress('font-ready');}
           if (!canWrite()) return fail('WRITE_DISABLED');
           if (api.currentPage.id !== page.id) return fail('PAGE_CHANGED');
           if (Date.now() > deadline) return fail('EXECUTION_DEADLINE');
@@ -129,15 +131,20 @@ export function createExecutor(api: Api, canWrite: () => boolean, getContext?: (
           if(op.effects!==undefined)node.effects=toNativeEffects(op.effects);
           if (op.cornerRadius !== undefined && (node.type === 'FRAME' || node.type === 'RECTANGLE')) node.cornerRadius = op.cornerRadius;
           if (op.ref) refs[op.ref] = node.id;
-          created.push({ index, id: node.id, type: node.type, ...(op.ref ? { ref: op.ref } : {}) });
+          created.push({ index, id: node.id, type: node.type, ...(op.ref ? { ref: op.ref } : {}) });nativeCreated.set(index,node);
         } catch (e) {
-          if (node && !node.removed) node.remove();
-          failed = { index, code: 'CREATE_FAILED', message: error(e) }; break;
+          if(node&&!node.removed){try{node.remove();}catch{if(!node.removed)residual=node;}}
+          const reason=editError(e);failed = { index, code:reason.code==='FONT_LOAD_FAILED'?reason.code:'CREATE_FAILED', message: reason.message }; break;
         }
       }
-      if (created.length) api.commitUndo();
+      if ((created.length||residual)&&!deferUndo) api.commitUndo();
       const completed = new Set(created.map(n => n.index));
-      return { context: context(), complete: !failed, created: created.sort((a,b) => a.index - b.index), refs, ...(failed ? { failed } : {}), skipped: operations.map((_,i) => i).filter(i => !completed.has(i) && i !== failed?.index) };
+      const results:NonNullable<z.infer<typeof import('@bridge/protocol').ExecuteResult>['results']>=[];
+      for(let i=0;i<operations.length;i++){
+        const made=created.find(n=>n.index===i),native=nativeCreated.get(i)??(failed?.index===i?residual:undefined);
+        results.push({index:i,op:'create',status:made?'completed':failed?.index===i?'failed':'skipped',...(native?{node:editSnapshot(native)}:{}),...(failed?.index===i&&residual?{residualIds:[residual.id],mutated:true}:{}),...(failed?.index===i?{error:{code:failed.code,message:failed.message}}:{})});
+      }
+      return boundExecution({ status:!failed?'complete':created.length||residual?'partial':'none',results,context: context(), complete: !failed, created: created.sort((a,b) => a.index - b.index), refs, ...(failed ? { failed } : {}), skipped: operations.map((_,i) => i).filter(i => !completed.has(i) && i !== failed?.index) });
     }
     const p = ReadInput.parse(raw);
     const candidates: BaseNode[] = [], missing: string[] = [];

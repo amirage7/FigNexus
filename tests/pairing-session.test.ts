@@ -3,6 +3,18 @@ import {PairingSession} from '../apps/figma-plugin/src/pairing';
 import {PluginConnection} from '../apps/figma-plugin/src/connection';
 function setup(){const messages:any[]=[],views:any[]=[];let p:PairingSession;const connection={connect:vi.fn(async(token:string,mode:'ws'|'http')=>{p.connectionEstablished(token,mode);}),disconnect:vi.fn(async()=>{})};p=new PairingSession(connection,m=>messages.push(m),v=>views.push(v));return {p,messages,views,connection};}
 it('automatically connects once only after saved pairing and context are available',async()=>{const f=setup();f.p.start();const id=f.messages[0].requestId;f.p.receive({type:'pairing-state',requestId:id,action:'load',saved:true,token:'t'.repeat(64),mode:'ws'});expect(f.connection.connect).not.toHaveBeenCalled();f.p.contextReady();f.p.contextReady();await Promise.resolve();expect(f.connection.connect).toHaveBeenCalledTimes(1);expect(f.connection.connect).toHaveBeenCalledWith('t'.repeat(64),'ws');});
+it('migrates saved HTTP pairings to WebSocket when available and falls back when blocked',async()=>{
+ const token='t'.repeat(64);
+ for(const blocked of [false,true]){
+   const f=setup();
+   if(blocked) f.connection.connect.mockRejectedValueOnce(Error('WebSocket blocked'));
+   f.p.start();f.p.contextReady();
+   f.p.receive({type:'pairing-state',requestId:f.messages[0].requestId,action:'load',saved:true,token,mode:'http'});
+   await Promise.resolve();
+   expect(f.connection.connect.mock.calls).toEqual(blocked?[[token,'ws'],[token,'http']]:[[token,'ws']]);
+   if(!blocked)expect(f.messages.at(-1)).toMatchObject({type:'pairing-save',mode:'ws'});
+ }
+});
 it('late saved pairing cannot overwrite manual input or reconnect after disconnect',async()=>{const f=setup();f.p.start();const id=f.messages[0].requestId;f.p.setToken('m'.repeat(64));await f.p.disconnect();f.p.receive({type:'pairing-state',requestId:id,action:'load',saved:true,token:'t'.repeat(64),mode:'ws'});f.p.contextReady();expect(f.connection.connect).not.toHaveBeenCalled();expect(f.views.at(-1).token).toBe('m'.repeat(64));});
 it('saves only after successful manual connection and ignores stale saves after forgetting',async()=>{const f=setup();f.p.setToken('t'.repeat(64));await f.p.connect();const save=f.messages.at(-1);expect(save.type).toBe('pairing-save');await f.p.forget();f.p.receive({type:'pairing-state',requestId:save.requestId,action:'save',saved:true});expect(f.views.at(-1).token).toBe('');expect(f.messages.at(-1).type).toBe('pairing-forget');});
 it('opting out forgets storage without disconnecting the active connection',()=>{const f=setup();f.p.setRemember(false);expect(f.messages.at(-1).type).toBe('pairing-forget');expect(f.connection.disconnect).not.toHaveBeenCalled();expect(f.views.at(-1).remember).toBe(false);});

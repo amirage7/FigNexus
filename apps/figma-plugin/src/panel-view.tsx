@@ -1,20 +1,115 @@
-import React from 'react';import type {FileContext} from '@bridge/protocol';import type {LocalDeleteState} from './confirmation-ui';
-export type PanelViewProps={compact:boolean;status:string;file?:FileContext;hasPair:boolean;savedPair?:boolean;remember:boolean;waiting:boolean;code?:string;notices:string[];deletion:LocalDeleteState;actions:{toggle:(compact:boolean)=>void;edit:(enabled:boolean)=>void;pair:()=>void;reconnect:()=>void;cancel:()=>void;remember:(enabled:boolean)=>void;repair:()=>void;fallback:()=>void;forget:()=>void;confirm:(approved:boolean)=>void}};
-export function PanelView(p:PanelViewProps){
- const online=p.status.startsWith('在线'),confirmation=p.deletion.confirmation;
- const edit=(compact=false)=><label className={compact?'compact-edit':'permission-control'} title="允许本次插件运行创建和编辑节点"><input type="checkbox" role="switch" checked={p.file?.writeEnabled??false} disabled={!p.file} onChange={e=>p.actions.edit(e.target.checked)}/>{compact?'编辑':<span><strong>允许创建和编辑</strong><small>{p.file?.writeEnabled?'当前已允许操作画布，可随时关闭':'开启后，AI 可以修改当前文件'}</small></span>}</label>;
- if(p.compact&&!confirmation)return <main className="compact-panel" title={p.notices.filter(Boolean).join(' ')||`${p.file?.document.name??''} / ${p.file?.page.name??''}`}><div className="compact-row"><span className={online?'connection-status online':'connection-status'} role="status">{online?'在线':'未连接'}</span>{edit(true)}<button className="button compact-expand" onClick={()=>p.actions.toggle(false)} aria-label="展开插件">展开</button></div></main>;
- return <main className="expanded-panel">
-  <header className="panel-heading"><div><h1>FigNexus</h1><p>连接画布，开始协作。</p></div><button className="button button-quiet" disabled={!!confirmation||p.waiting} onClick={()=>p.actions.toggle(true)} aria-label="折叠插件">折叠</button></header>
-  <section className="connection-section" aria-label="连接状态"><div className="connection-heading"><span className={online?'connection-status online':'connection-status'} role="status">{online?'已连接':p.waiting?'等待配对确认':'尚未连接'}</span><span className="connection-caption">{online?'本机连接正常':'仅连接你自己的电脑'}</span></div>
-   {p.file&&<div className="document-location"><strong title={p.file.document.name}>{p.file.document.name}</strong><span title={p.file.page.name}>{p.file.page.name}</span></div>}
-   {!online&&<div className="connect-actions"><button className="button button-primary" disabled={!p.file||p.waiting} onClick={p.hasPair?p.actions.reconnect:p.actions.pair}>{p.waiting?'配对中…':p.hasPair?'重新连接':'配对本机'}</button>{p.waiting&&<button className="button" onClick={p.actions.cancel}>取消配对</button>}</div>}
-   {p.waiting&&p.code&&<div className="pairing-code"><small>核对本机弹窗中的配对码</small><strong>{p.code}</strong></div>}
-  </section>
-  <section className="permission-section" aria-label="画布权限">{edit()}<p className="permission-note">每次重开默认关闭，修改前保留备份。</p></section>
-  {confirmation&&<section className="confirmation-panel" aria-label="删除确认"><h2>确认删除</h2><p>将删除 {confirmation.targets.length} 个节点，修改前备份会保留。</p><p className="confirmation-targets">目标：{confirmation.targets.join(', ')}</p><div className="connect-actions"><button className="button button-danger" onClick={()=>p.actions.confirm(true)}>确认并执行删除</button><button className="button" onClick={()=>p.actions.confirm(false)}>取消</button></div></section>}
-  {p.notices.filter(Boolean).map((notice,i)=><p key={i} className="panel-notice" role="status">{notice}</p>)}
-  <details className="connection-settings"><summary>连接设置</summary><div className="settings-content"><label className="remember-control"><input type="checkbox" checked={p.remember} onChange={e=>p.actions.remember(e.target.checked)}/>下次自动连接</label><div className="settings-actions"><button className="button" disabled={!p.file||p.waiting} onClick={p.actions.repair}>重新配对</button><button className="button" disabled={!p.file||!p.hasPair||p.waiting} onClick={p.actions.fallback}>尝试备用连接</button><button className="button button-danger-text" disabled={(!p.hasPair&&!p.savedPair)||p.waiting} onClick={p.actions.forget}>清除本机配对</button></div></div></details>
-  <footer className="panel-footer">保持插件运行即可协作，折叠后连接继续。</footer>
- </main>;
+import React, { useState } from 'react';
+import type { FileContext } from '@bridge/protocol';
+import type { LocalDeleteState } from './confirmation-ui';
+
+export type PanelViewProps = {
+  compact: boolean;
+  status: string;
+  file?: FileContext;
+  hasPair: boolean;
+  savedPair?: boolean;
+  remember: boolean;
+  waiting: boolean;
+  code?: string;
+  notices: string[];
+  deletion: LocalDeleteState;
+  chat?: React.ReactNode;
+  canvas?: React.ReactNode;
+  actions: {
+    toggle: (compact: boolean) => void;
+    pair: () => void;
+    reconnect: () => void;
+    cancel: () => void;
+    remember: (enabled: boolean) => void;
+    repair: () => void;
+    fallback: () => void;
+    forget: () => void;
+    confirm: (approved: boolean) => void;
+  };
+};
+
+export function PanelView(p: PanelViewProps) {
+  const [view, setView] = useState<'chat' | 'canvas'>('chat');
+  const online = p.status.startsWith('在线');
+  const connecting = p.status.startsWith('正在连接');
+  const connectionLabel = online ? '已连接' : p.waiting ? '配对中' : connecting ? '连接中' : '未连接';
+  const confirmation = p.deletion.confirmation;
+  const compact = p.compact && !confirmation;
+  const pairingRequired = !online && view === 'chat';
+  const notices = [...new Set(p.notices.filter(Boolean))];
+  const status = <span className={online ? 'connection-status online' : 'connection-status'} role="status">{connectionLabel}</span>;
+  return <>
+    {compact && <main className="compact-panel">
+      {status}
+      <button type="button" className="button button-quiet" onClick={() => p.actions.toggle(false)} aria-label="展开插件">展开</button>
+    </main>}
+    <main className="expanded-panel" hidden={compact}>
+      <header className="panel-heading">
+        <div className="document-location">
+          <strong title={p.file?.document.name}>{p.file?.document.name || 'FigNexus'}</strong>
+          {p.file && <span title={p.file.page.name}>{p.file.page.name}</span>}
+        </div>
+        <div className="panel-controls">
+          <details className="connection-settings" onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+          }} onKeyDown={event => {
+            if (event.key !== 'Escape' || !event.currentTarget.open) return;
+            event.stopPropagation();
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector('summary')?.focus();
+          }}>
+            <summary aria-label={'连接设置 · ' + connectionLabel} title="连接设置">{status}</summary>
+            <div className="settings-content">
+              <label className="remember-control">
+                <input type="checkbox" checked={p.remember} onChange={event => p.actions.remember(event.target.checked)} />
+                下次自动连接
+              </label>
+              <div className="settings-actions">
+                {(p.hasPair || p.savedPair) && <button type="button" className="button" disabled={!p.file || p.waiting} onClick={p.actions.repair}>重新配对</button>}
+                {p.hasPair && <button type="button" className="button" disabled={!p.file || p.waiting} onClick={p.actions.fallback}>尝试备用连接</button>}
+                {(p.hasPair || p.savedPair) && <button type="button" className="button button-danger-text" disabled={p.waiting} onClick={p.actions.forget}>清除本机配对</button>}
+              </div>
+            </div>
+          </details>
+          <button type="button" className="button button-quiet" disabled={!!confirmation || p.waiting} onClick={() => p.actions.toggle(true)} aria-label="折叠插件">折叠</button>
+        </div>
+      </header>
+
+      {confirmation && <section className="confirmation-panel" aria-label="删除确认">
+        <h2>删除 {confirmation.targets.length} 个图层？</h2>
+        <p className="confirmation-targets">{confirmation.targets.join(', ')}</p>
+        <p>修改前会创建备份。</p>
+        <div className="connect-actions">
+          <button type="button" className="button button-danger" onClick={() => p.actions.confirm(true)}>确认并执行删除</button>
+          <button type="button" className="button" onClick={() => p.actions.confirm(false)}>取消</button>
+        </div>
+      </section>}
+
+      <nav className="workspace-nav" aria-label="插件功能" hidden={Boolean(confirmation)}>
+        <button type="button" aria-pressed={view === 'chat'} aria-controls="workspace-chat" onClick={() => setView('chat')}>Codex 对话</button>
+        <button type="button" aria-pressed={view === 'canvas'} aria-controls="workspace-canvas" onClick={() => setView('canvas')}>画布工具</button>
+      </nav>
+      {notices.length > 0 && !pairingRequired && <div className="panel-notices">
+        {notices.map(notice => <p key={notice} role="status">{notice}</p>)}
+      </div>}
+
+      <section id="workspace-chat" className="workspace-view chat-view" aria-label="Codex 对话" hidden={view !== 'chat' || Boolean(confirmation)}>
+        {online ? p.chat : <div className="pairing-view">
+          <h2>{p.waiting ? '确认本机配对' : connecting ? '正在连接' : p.hasPair ? '连接已断开' : '连接本机 Codex'}</h2>
+          {p.waiting && p.code && <strong className="pairing-code">{p.code}</strong>}
+          {notices.length > 0
+            ? notices.map(notice => <p key={notice} role="status">{notice}</p>)
+            : !connecting && !p.waiting && <p>{p.hasPair ? '重新连接后即可继续对话。' : '配对一次，即可在 Figma 里使用 Codex。'}</p>}
+          <div className="connect-actions">
+            {p.waiting
+              ? <button type="button" className="button" onClick={p.actions.cancel}>取消配对</button>
+              : !connecting && <button type="button" className="button button-primary" disabled={!p.file} onClick={p.hasPair ? p.actions.reconnect : p.actions.pair}>{p.hasPair ? '重新连接' : '配对本机'}</button>}
+          </div>
+        </div>}
+      </section>
+      <section id="workspace-canvas" className="workspace-view canvas-view" aria-label="画布工具" hidden={view !== 'canvas' || Boolean(confirmation)}>
+        {p.canvas}
+      </section>
+    </main>
+  </>;
 }
