@@ -39,6 +39,26 @@ const quote = (value: string) => JSON.stringify(value);
 const Account = z.object({ account: z.unknown().nullable(), requiresOpenaiAuth: z.boolean() });
 const Thread = z.object({ thread: z.object({ id: z.string().min(1) }) });
 const Turn = z.object({ turn: z.object({ id: z.string().min(1) }) });
+const RpcFailure = z.object({ code: z.number(), message: z.string() });
+const rpcErrors: Record<string, string> = {
+  initialize: '无法初始化本机 Codex。可以重试。',
+  'account/read': '无法读取本机 Codex 登录状态。',
+  'thread/start': '无法创建 Codex 会话。请检查本机 FigNexus 工具连接。',
+  'thread/resume': '无法恢复这段 Codex 会话。请检查原会话和本机 FigNexus 工具连接。',
+  'thread/fork': '原 Codex 会话正在被占用，暂时无法从已有记录继续。请稍后重试。',
+  'turn/start': 'Codex 未能开始这条消息。可以在本会话重试。',
+};
+
+class CodexRpcError extends Error {
+  readonly activeWriter: boolean;
+
+  constructor(method: string, error: unknown) {
+    super(rpcErrors[method] ?? '本机 Codex 未能处理请求。');
+    const details = RpcFailure.safeParse(error);
+    this.activeWriter = method === 'thread/resume' && details.success && details.data.code === -32600
+      && details.data.message.includes('already has an active writer');
+  }
+}
 
 export function codexAppServer(
   command: string, mcpEntry: string, cwd: string,
@@ -69,7 +89,7 @@ export function codexAppServer(
     ], { cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
     const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
     const lines = createInterface({ input: child.stdout });
-    const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+    const pending = new Map<number, { method: string; resolve: (value: unknown) => void; reject: (error: Error) => void }>();
     let sequence = 0;
     let threadId: string | undefined;
     let turnId: string | undefined;
@@ -92,7 +112,7 @@ export function codexAppServer(
     const send = (message: unknown) => { child.stdin.write(JSON.stringify(message) + '\n'); };
     const rpc = (method: string, params: unknown) => new Promise<unknown>((resolve, reject) => {
       const id = ++sequence;
-      pending.set(id, { resolve, reject });
+      pending.set(id, { method, resolve, reject });
       send({ id, method, params });
     });
     const append = (itemId: string, text: string) => {
@@ -111,8 +131,9 @@ export function codexAppServer(
       if (typeof message.id === 'number') {
         const request = pending.get(message.id);
         pending.delete(message.id);
-        if (message.error) request?.reject(new Error('Codex 拒绝了请求。请检查本机登录、MCP 配置或会话是否仍可用。'));
-        else request?.resolve(message.result);
+        if (!request) return;
+        if (message.error) request.reject(new CodexRpcError(request.method, message.error));
+        else request.resolve(message.result);
         return;
       }
       const p = message.params;
@@ -166,11 +187,16 @@ export function codexAppServer(
           'Use the session ID from figma_get_status. Follow the native tool safeguards and report the actual tool results.',
         ].join(' '),
       };
+      let notice: string | undefined;
       const thread = Thread.parse(await (input.threadId
-        ? rpc('thread/resume', { ...turnOptions, threadId: input.threadId, excludeTurns: true })
+        ? rpc('thread/resume', { ...turnOptions, threadId: input.threadId, excludeTurns: true }).catch(error => {
+            if (!(error instanceof CodexRpcError) || !error.activeWriter || input.signal.aborted) throw error;
+            notice = '原 Codex 会话正在被占用，已从已有记录继续。';
+            return rpc('thread/fork', { ...turnOptions, threadId: input.threadId, excludeTurns: true });
+          })
         : rpc('thread/start', turnOptions)));
       threadId = thread.thread.id;
-      await events.thread(threadId);
+      await events.thread(threadId, notice);
       if (input.signal.aborted) return 'interrupted';
       const context = JSON.stringify({
         sessionId: input.target.sessionId, pageId: input.target.context.page.id,

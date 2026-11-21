@@ -9,7 +9,7 @@ type Outcome = 'completed' | 'interrupted' | 'failed';
 export type ChatDriver = (input: {
   threadId?: string; text: string; target: Target; scope: string; signal: AbortSignal;
 }, events: {
-  thread: (id: string) => Promise<void>;
+  thread: (id: string, notice?: string) => Promise<void>;
   text: (delta: string) => void;
 }) => Promise<Outcome>;
 
@@ -19,6 +19,7 @@ const Turn = z.object({
   reply: z.string().max(32000),
   status: z.enum(['running', 'completed', 'interrupted', 'failed']),
   error: z.string().max(300).optional(),
+  notice: z.string().max(300).optional(),
 });
 const History = z.object({ threadId: z.string().min(1).max(128).optional(), turns: z.array(Turn).max(20) });
 type History = z.infer<typeof History>;
@@ -101,8 +102,9 @@ export class CodexChats {
       turn.status = await this.driver({
         scope: active.scope, target: active.target, signal: active.abort.signal, threadId: active.history.threadId, text: turn.text,
       }, {
-        thread: async id => {
+        thread: async (id, notice) => {
           active.history.threadId = id;
+          if (notice) turn.notice = notice;
           await this.save(path, active.history);
         },
         text: delta => { turn.reply = (turn.reply + delta).slice(0, 32000); },

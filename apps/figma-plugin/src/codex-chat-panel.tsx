@@ -7,7 +7,7 @@ const Snapshot = z.object({
   turns: z.array(z.object({
     id: z.string(), text: z.string(), reply: z.string(),
     status: z.enum(['running', 'completed', 'interrupted', 'failed']),
-    error: z.string().optional(),
+    error: z.string().optional(), notice: z.string().optional(),
   })).max(20),
 });
 
@@ -95,6 +95,7 @@ export function CodexChatPanel({ connection, persistent }: { connection: PluginC
       </div>}
       {snapshot?.turns.map(turn => <div className="codex-chat-turn" key={turn.id}>
         <p className="codex-chat-user"><span className="visually-hidden">你</span>{turn.text}</p>
+        {turn.notice && <p className="codex-chat-status">{turn.notice}</p>}
         {(turn.reply || turn.error || turn.status === 'interrupted') && <p className="codex-chat-reply"><span className="visually-hidden">Codex</span>{turn.reply}
           {turn.status === 'interrupted' && <span className="codex-chat-status">已停止</span>}
           {turn.error && <span className="codex-chat-status">{turn.error}</span>}
