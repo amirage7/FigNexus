@@ -4,6 +4,7 @@ import {resolve} from 'node:path';
 import {installConfig,uninstallConfig,planConfig} from '../scripts/distribution/config.mjs';
 import {stageDistribution} from '../scripts/distribution/build.mjs';
 
+const releasePluginId='1691480874857852306';
 const options=(home:string)=>({codexHome:home,installDir:resolve(home,'程序 files'),dataDir:resolve(home,'用户 data')});
 describe('portable Windows Codex installation',()=>{
  it('preserves other settings, backs up and makes reinstall idempotent',async()=>{
@@ -70,7 +71,7 @@ describe('runtime-included distribution',()=>{
   await writeFile(resolve(root,'package.json'),JSON.stringify({version:'1.0.0',dependencies:{prod:'1.0.0'},devDependencies:{dev:'1.0.0'}}));
   for(const name of ['prod','dev']) {await writeFile(resolve(root,'node_modules',name,'package.json'),JSON.stringify({name,version:'1.0.0',main:'index.js'}));await writeFile(resolve(root,'node_modules',name,'index.js'),'module.exports={}');}
   for(const path of ['apps/bridge-server/dist/index.js','apps/pairing-helper/dist/index.js','packages/mcp-server/dist/index.js','apps/figma-plugin/dist/main.js','apps/figma-plugin/dist/index.html']) await writeFile(resolve(root,path),'// compiled');
-  await writeFile(resolve(root,'apps/figma-plugin/dist/manifest.json'),JSON.stringify({id:'123456789',networkAccess:{allowedDomains:['none']}}));
+  await writeFile(resolve(root,'apps/figma-plugin/dist/manifest.json'),JSON.stringify({id:releasePluginId,networkAccess:{allowedDomains:['none']}}));
   await writeFile(resolve(root,'apps/figma-plugin/dist/manifest.json.backup-local'),'private identity');
   await writeFile(resolve(root,'node.exe'),'runtime');await writeFile(resolve(root,'LICENSE'),'licensed');
   const output=resolve(root,'output');
@@ -82,7 +83,7 @@ describe('runtime-included distribution',()=>{
   expect(manifest.networkAccess.allowedDomains).toContain('http://localhost:3055');
   expect(manifest.networkAccess.reasoning).toContain('local');
   expect(manifest.id).toBeUndefined();
-  expect(JSON.parse(await readFile(resolve(output,'plugin/manifest.json'),'utf8')).id).toBeUndefined();
+  expect(JSON.parse(await readFile(resolve(output,'plugin/manifest.json'),'utf8')).id).toBe(releasePluginId);
   expect(await readdir(resolve(output,'plugin'))).not.toContain('manifest.json.backup-local');
   expect(await readFile(resolve(output,'install.cmd'),'utf8')).toContain('%~dp0');
   expect(await readFile(resolve(output,'Windows安装说明.md'),'utf8')).toContain('FigNexus Windows 安装指南');
@@ -97,7 +98,7 @@ describe('runtime-included distribution',()=>{
   await writeFile(resolve(root,'package.json'),JSON.stringify({version:'1',dependencies:{string_decoder:'1',a:'1'}}));
   for(const [path,name,version,deps] of [['string_decoder','string_decoder','1',{}],['a','a','1',{string_decoder:'2'}],['a/node_modules/string_decoder','string_decoder','2',{}]] as const){await writeFile(resolve(root,'node_modules',path,'package.json'),JSON.stringify({name,version,dependencies:deps}));}
   for(const path of ['apps/bridge-server/dist/index.js','apps/pairing-helper/dist/index.js','packages/mcp-server/dist/index.js','apps/figma-plugin/dist/main.js','apps/figma-plugin/dist/index.html'])await writeFile(resolve(root,path),'build');
-  await writeFile(resolve(root,'apps/figma-plugin/dist/manifest.json'),'{}');await writeFile(resolve(root,'node.exe'),'node');await writeFile(resolve(root,'LICENSE'),'license');
+  await writeFile(resolve(root,'apps/figma-plugin/dist/manifest.json'),JSON.stringify({id:releasePluginId}));await writeFile(resolve(root,'node.exe'),'node');await writeFile(resolve(root,'LICENSE'),'license');
   const output=resolve(root,'output');
   await stageDistribution({root,output,nodePath:resolve(root,'node.exe'),nodeLicense:resolve(root,'LICENSE'),installerSource:resolve('scripts/distribution')});
   expect(JSON.parse(await readFile(resolve(output,'node_modules/a/node_modules/string_decoder/package.json'),'utf8')).version).toBe('2');
@@ -105,5 +106,5 @@ describe('runtime-included distribution',()=>{
  });
 });
 it('includes the single first-use entry and direct manifest import instructions',async()=>{
- const root=await mkdtemp(resolve('.bridge','onboarding bundle '));for(const path of ['apps/bridge-server/dist','apps/pairing-helper/dist','packages/mcp-server/dist','apps/figma-plugin/dist'])await mkdir(resolve(root,path),{recursive:true});await writeFile(resolve(root,'package.json'),JSON.stringify({version:'0.3.1',dependencies:{}}));for(const path of ['apps/bridge-server/dist/index.js','apps/pairing-helper/dist/index.js','packages/mcp-server/dist/index.js','apps/figma-plugin/dist/main.js','apps/figma-plugin/dist/index.html'])await writeFile(resolve(root,path),'build');await writeFile(resolve(root,'apps/figma-plugin/dist/manifest.json'),'{}');await writeFile(resolve(root,'node.exe'),'node');await writeFile(resolve(root,'LICENSE'),'license');const output=resolve(root,'output');await stageDistribution({root,output,nodePath:resolve(root,'node.exe'),nodeLicense:resolve(root,'LICENSE'),installerSource:resolve('scripts/distribution')});expect(await readFile(resolve(output,'开始使用.cmd'),'utf8')).toContain('start.ps1');expect(await readFile(resolve(output,'setup-plugin.ps1'),'utf8')).toContain('Import plugin from manifest');expect(await readFile(resolve(output,'start.ps1'),'utf8')).toContain('connect.ps1');
+ const root=await mkdtemp(resolve('.bridge','onboarding bundle '));for(const path of ['apps/bridge-server/dist','apps/pairing-helper/dist','packages/mcp-server/dist','apps/figma-plugin/dist'])await mkdir(resolve(root,path),{recursive:true});await writeFile(resolve(root,'package.json'),JSON.stringify({version:'0.3.1',dependencies:{}}));for(const path of ['apps/bridge-server/dist/index.js','apps/pairing-helper/dist/index.js','packages/mcp-server/dist/index.js','apps/figma-plugin/dist/main.js','apps/figma-plugin/dist/index.html'])await writeFile(resolve(root,path),'build');await writeFile(resolve(root,'apps/figma-plugin/dist/manifest.json'),JSON.stringify({id:releasePluginId}));await writeFile(resolve(root,'node.exe'),'node');await writeFile(resolve(root,'LICENSE'),'license');const output=resolve(root,'output');await stageDistribution({root,output,nodePath:resolve(root,'node.exe'),nodeLicense:resolve(root,'LICENSE'),installerSource:resolve('scripts/distribution')});expect(await readFile(resolve(output,'开始使用.cmd'),'utf8')).toContain('start.ps1');expect(await readFile(resolve(output,'setup-plugin.ps1'),'utf8')).toContain('Import plugin from manifest');expect(await readFile(resolve(output,'start.ps1'),'utf8')).toContain('connect.ps1');
 });

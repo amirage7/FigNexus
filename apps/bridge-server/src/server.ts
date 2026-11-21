@@ -112,7 +112,7 @@ export async function createBridge(token: string, logging = false, audit?:AuditS
       return { accepted: true };
     });
   }
-  app.get('/v1/health',async()=>({service:'figma-ai-bridge',version:'0.3.10',protocolVersion:1,capabilities:['quick-pairing','timeout-barrier','native-visual','native-design','auto-pair-prompt','retained-preview','native-vectors']}));
+  app.get('/v1/health',async()=>({service:'figma-ai-bridge',version:'0.3.11',protocolVersion:1,capabilities:['quick-pairing','timeout-barrier','native-visual','native-design','auto-pair-prompt','retained-preview','native-vectors']}));
   if(localPrompt)app.addHook('onClose',async()=>{localPrompt.close();});
   if(quickPairing){
     app.post('/v1/pair/start',async(req)=>{z.object({}).strict().parse(req.body);return localPrompt?localPrompt.start():quickPairing.start();});

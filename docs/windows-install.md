@@ -1,12 +1,12 @@
 # FigNexus Windows 安装指南
 
-0.3.10 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
+0.3.11 支持 Windows x64、Figma 桌面端与 Codex。包内已含运行环境、依赖和插件编译结果，不需要自行构建或额外 API key。
 
 ![统一开始使用入口](images/setup.svg)
 
 ## 1. 双击开始使用
 
-从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.10-Windows.zip`，完整解压，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入大写 `YES` 回车；完成后继续启动本机服务并显示 Figma 导入路径。不需要单独运行 `install.cmd`。
+从 [Releases](https://github.com/amirage7/FigNexus/releases/latest) 下载 `FigNexus-0.3.11-Windows.zip`，完整解压，双击 `开始使用.cmd`。首次会自动进入安装配置预览，输入大写 `YES` 回车；完成后继续启动本机服务并显示 Figma 导入路径。不需要单独运行 `install.cmd`。
 
 首次启动会备份并合并 Codex MCP 配置，保留其他服务，启动本机服务，并显示待导入的 `manifest.json` 完整路径。无需手工编辑 Codex 配置，不用另外安装 Codex 插件。
 
@@ -16,7 +16,7 @@
 
 在文件窗口的“文件名”栏粘贴安装器显示的完整路径，选择**安装目录/plugin/manifest.json**，然后运行 **FigNexus**。
 
-**不用 New plugin，不用创建空白插件，不用选择别的 manifest 提取 ID。** 无 ID 导入和运行已通过真实 Figma 验证，导入前后文件没有被补写 ID，在线只读 ping 成功。
+**直接导入安装目录里的 manifest。** 自 0.3.11 起，Windows 安装包保留 FigNexus 的插件 ID，Figma 可据此在本机保存配对和面板偏好。
 
 ![真实无 ID 导入成功提示](images/import-success.png)
 
@@ -40,11 +40,11 @@
 
 ## 升级与已有 ID
 
-0.3.10 增加画布编辑和导出能力，并改进 Figma 内的 Codex 会话续接。原会话正在被占用时，插件可以从已有记录继续。升级后请完全退出并重启 Codex，同时关闭旧 Figma 插件，从新安装目录导入并运行插件；新版本的插件界面、主线程和本机服务需要一并更新。
+0.3.11 修复首次安装时无法保存本机配对的问题。从无 ID 的版本升级后，在新导入的插件中确认一次配对，并勾选「下次自动连接」。升级后请完全退出并重启 Codex，同时关闭旧 Figma 插件，从新安装目录导入并运行插件；新版本的插件界面、主线程和本机服务需要一并更新。
 
 解压新包并双击 `开始使用.cmd`，启动入口会识别升级，保留配对与日志，更新属于本安装的 MCP 配置。然后在 Figma 导入新安装目录的 manifest；**升级也不需要 New plugin**。旧服务占用 3055 时，关闭自己的旧版本后再启动。
 
-旧版本已有 Figma 分配的 ID 时，安装器从上次安装记录自动读取并保存到数据目录 `plugin-id.json`，后续升级自动复用。同一 ID 不会要求重复选择文件；无 ID 安装不会生成或伪造 ID。
+旧版本已有 Figma 分配的 ID 时，安装器从上次安装记录自动读取并保存到数据目录 `plugin-id.json`，后续升级自动复用。后续升级继续复用这个 ID，使 Figma 能读到原有配对。没有历史 ID 的安装使用发行包提供的 FigNexus ID。
 
 从非安装器的旧开发插件迁移时，可选运行 `setup-plugin.ps1 -GeneratedManifest "旧插件的manifest完整路径"`，复用已有 ID。该参数不是首次安装的必填步骤。冲突或损坏的身份记录会报错并保留原文件，不能随意填数字修复。
 

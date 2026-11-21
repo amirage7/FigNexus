@@ -1,4 +1,5 @@
 import {readFile,writeFile,rename,unlink,stat,mkdir,link} from 'node:fs/promises';import {resolve} from 'node:path';import {randomUUID} from 'node:crypto';
+export const releasePluginId='1691480874857852306';
 function validId(id){return typeof id==='string'&&/^\d{1,64}$/.test(id);}
 export function localManifest(current,generated){
  if(!current||typeof current!=='object'||current.main!=='main.js'||current.ui!=='index.html')throw Error('Invalid installed plugin manifest');
@@ -23,9 +24,12 @@ export async function inspectPluginIdentity(target,dataDir,previousInstallDir,ge
  if(previous?.id!==undefined&&!validId(previous.id))throw Error('Invalid previous Figma plugin ID');
  const generated=generatedPath?JSON.parse((await bounded(resolve(generatedPath))).replace(/^\uFEFF/,'')):undefined;
  if(generatedPath&&!validId(generated?.id))throw Error('Select an existing Figma manifest with a numeric plugin ID');
- const ids=[current.id,saved?.id,previous?.id,generated?.id].filter(id=>id!==undefined);
+ // A packaged default can yield to a verified identity from an existing installation.
+ const currentId=current.id===releasePluginId?undefined:current.id;
+ const ids=[currentId,saved?.id,previous?.id,generated?.id].filter(id=>id!==undefined);
  if(new Set(ids).size>1)throw Error('Figma plugin ID conflict; original files retained');
- return {id:ids[0],current,original,savedPath,saved,path:target,mode:ids.length?'reuse-id':'direct-import'};
+ const id=ids[0]??current.id;
+ return {id,current,original,savedPath,saved,path:target,mode:id?'reuse-id':'direct-import'};
 }
 export async function prepareInstalledPlugin(installDir,dataDir,previousInstallDir,generatedPath){
  const plan=await inspectPluginIdentity(resolve(installDir,'plugin/manifest.json'),dataDir,previousInstallDir,generatedPath);

@@ -172,7 +172,7 @@ export function codexAppServer(
       child.kill();
     }, startupMs);
     try {
-      await rpc('initialize', { clientInfo: { name: 'fignexus', title: 'FigNexus', version: '0.3.10' } });
+      await rpc('initialize', { clientInfo: { name: 'fignexus', title: 'FigNexus', version: '0.3.11' } });
       send({ method: 'initialized' });
       const account = Account.parse(await rpc('account/read', { refreshToken: false }));
       if (account.requiresOpenaiAuth && !account.account) throw Error('本机 Codex CLI 尚未登录。请在终端运行 codex login，再回到 Figma 重新发送。');

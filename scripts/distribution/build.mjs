@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
+import {releasePluginId} from './plugin-config.mjs';
 
 async function metadata(path) {return JSON.parse(await readFile(join(path,'package.json'),'utf8'));}
 async function locate(name,from) {
@@ -65,10 +66,11 @@ export async function stageDistribution({root,output,nodePath,nodeLicense,instal
   await writeFile(join(output,'plugin/THIRD-PARTY-NOTICES.txt'),notices.join('\n\n----------------------------------------\n\n'));
  }
  const manifest=JSON.parse(await readFile(join(output,'plugin/manifest.json'),'utf8'));
- delete manifest.id;
+ if(manifest.id!==releasePluginId)throw Error('Windows release requires the registered FigNexus plugin ID');
  manifest.name='FigNexus';
  await writeFile(join(output,'plugin/manifest.json'),JSON.stringify(manifest,null,2)+'\n');
  const candidate={...manifest,name:'FigNexus (Production Candidate)',networkAccess:{allowedDomains:['http://localhost:3055','ws://localhost:3055'],reasoning:'Connect only to the local FigNexus on this computer for user-approved automation.'}};
+ delete candidate.id;
  await writeFile(join(output,'plugin/manifest.production-candidate.json'),JSON.stringify(candidate,null,2));
  await cp(installerSource,join(output,'scripts/distribution'),{recursive:true,filter:source=>!['build.mjs','node-LICENSE.txt'].includes(source.split(/[\\/]/).at(-1))});
  for(const name of ['install.ps1','install.cmd','uninstall.ps1','uninstall.cmd','connect.ps1','连接 Figma.cmd','start.ps1','setup-plugin.ps1','开始使用.cmd'])await cp(join(installerSource,name),join(output,name));

@@ -25,6 +25,15 @@ it('migrates a previous managed plugin ID then reuses it on the next upgrade',as
  const next=resolve(f.root,'next');await mkdir(resolve(next,'plugin'),{recursive:true});await writeFile(resolve(next,'plugin/manifest.json'),JSON.stringify(direct));
  expect(await (config as any).prepareInstalledPlugin(next,f.data)).toMatchObject({mode:'reuse-id'});expect(JSON.parse(await readFile(resolve(next,'plugin/manifest.json'),'utf8')).id).toBe('123456789');
 });
+it('preserves the previous plugin identity when upgrading to a package with the release ID',async()=>{
+ const f=await fixture();
+ const previous=resolve(f.root,'previous');
+ await mkdir(resolve(previous,'plugin'),{recursive:true});
+ await writeFile(resolve(previous,'plugin/manifest.json'),JSON.stringify({...direct,id:'123456789'}));
+ await writeFile(f.target,JSON.stringify({...direct,id:'1691480874857852306'}));
+ await expect(config.prepareInstalledPlugin(f.install,f.data,previous)).resolves.toMatchObject({mode:'reuse-id'});
+ expect(JSON.parse(await readFile(f.target,'utf8')).id).toBe('123456789');
+});
 it('retains current ID and refuses conflicting or corrupt saved identity without changing files',async()=>{
  const f=await fixture();await mkdir(f.data);await writeFile(f.target,JSON.stringify({...direct,id:'111'}));await writeFile(resolve(f.data,'plugin-id.json'),JSON.stringify({version:1,id:'222'}));
  const before=await readFile(f.target,'utf8');await expect((config as any).prepareInstalledPlugin(f.install,f.data)).rejects.toThrow(/conflict/i);expect(await readFile(f.target,'utf8')).toBe(before);
